@@ -152,3 +152,7 @@ Bug reports, test results with other HALOT models and translations are very welc
 
 [MIT](LICENSE). "Creality" and "HALOT" are trademarks of their respective owners and are used here
 only to describe compatibility.
+
+> And yeah, this was entirely built using Claude (or Claudinho, to those close to him). The only human-made part is this one, which goes like: dabadee dabadaa. 
+> I'm all for using AI to create new builds, apps, dreams, models, logos, images, especially when some deep research is required or when we don't fully understand how something works. Feel free to use it—just make sure to test everything and be nice to AI. After all, we never know when Skynet might come for us :D. 
+>I don't fully understand how that communication works or how I was able to do it. The best I could do was point out some UI enhancements, so don't judge me! I'm just here to make Unix users' lives easier when it comes to 3D printing. (Running it natively is better than WINEing it, after all! )
