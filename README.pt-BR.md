@@ -29,7 +29,20 @@ A ideia é crescer para outras marcas e sistemas com a ajuda da comunidade.
 > usando um protocolo descoberto por observação. Confira a cuba de resina e a plataforma antes de
 > imprimir, como faria com o software oficial.
 
-## Instalação
+## Download
+
+Baixe a versão mais recente na [página de Releases](https://github.com/alexandre-pansan/ResinDeck/releases):
+
+- **Linux:** `ResinDeck-<versão>-x86_64.AppImage`. Torne o arquivo executável (`chmod +x`, ou nas
+  propriedades do gerenciador de arquivos) e abra.
+- **Windows:** `ResinDeck-<versão>-windows-x64.exe`. O arquivo ainda não é assinado, então o
+  SmartScreen do Windows pode avisar: clique em **Mais informações** → **Executar assim mesmo**.
+
+O app roda em segundo plano, com um ícone na bandeja do sistema (**Abrir ResinDeck** / **Sair**), e
+abre a interface no navegador. No GNOME, o ícone da bandeja precisa da extensão AppIndicator, que
+já vem no Ubuntu.
+
+## Instalação a partir do código
 
 Precisa de Python 3.10+ e da impressora na mesma rede que o computador.
 
@@ -65,9 +78,8 @@ python3 -m venv .venv
 A interface está em inglês e português, escolhido pelo idioma do navegador (dá para trocar no
 canto superior direito).
 
-O servidor só escuta em `127.0.0.1`, então não fica acessível para outras máquinas. A visualização
-3D carrega o [three.js](https://threejs.org/) de uma CDN; sem internet, as abas Camadas e Miniatura
-continuam funcionando.
+O servidor só escuta em `127.0.0.1`, então não fica acessível para outras máquinas. Tudo funciona
+sem internet, inclusive a visualização 3D.
 
 ## Linha de comando
 
@@ -118,7 +130,9 @@ vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 | `halot.py` | driver das Creality HALOT (protocolo de rede) |
 | `server.py` | servidor web local (aiohttp): biblioteca, visualizações, conexões com as impressoras |
 | `cxdlp.py` | leitor de `.cxdlpv4`: cabeçalho, miniaturas, imagens das camadas, voxels para o 3D |
+| `desktop.py` | ponto de entrada do app desktop: servidor em segundo plano e ícone na bandeja |
 | `static/` | interface web (JavaScript puro, three.js no 3D, `i18n.js` com as traduções) |
+| `packaging/` | ícone, receita do PyInstaller e script do AppImage |
 
 ## Contribuindo
 
@@ -131,7 +145,7 @@ Relatos de bugs, testes com outros modelos HALOT e traduções são muito bem-vi
   protocolo de rede e do algoritmo do token.
 - [UVtools](https://github.com/sn4k3/UVtools), de Tiago Conceição: documentação do formato
   `.cxdlpv4`. O ResinDeck tem implementação própria em Python e não contém código do UVtools.
-- [three.js](https://threejs.org/) (MIT) para a visualização 3D.
+- [three.js](https://threejs.org/) (MIT) para a visualização 3D, incluído em `static/vendor/three/`.
 
 ## Licença
 

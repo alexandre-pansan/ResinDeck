@@ -1,0 +1,5 @@
+# Extra packages for the desktop build (tray icon and packaging). See packaging/.
+-r requirements.txt
+pystray>=0.19
+pillow>=10
+pyinstaller>=6

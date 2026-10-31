@@ -29,7 +29,20 @@ or Proton. The goal is to grow to more printer brands and systems with help from
 > printer with a protocol worked out by observation. Check the resin vat and the build plate
 > before starting a print, as you would with the official software.
 
-## Install
+## Download
+
+Get the latest version from the [Releases page](https://github.com/alexandre-pansan/ResinDeck/releases):
+
+- **Linux:** `ResinDeck-<version>-x86_64.AppImage`. Make it executable (`chmod +x`, or in your
+  file manager's properties) and open it.
+- **Windows:** `ResinDeck-<version>-windows-x64.exe`. The file is not signed yet, so Windows
+  SmartScreen may warn about it: click **More info** → **Run anyway**.
+
+The app runs in the background with an icon in the system tray (**Open ResinDeck** / **Quit**) and
+opens the interface in your browser. On GNOME the tray icon needs the AppIndicator extension, which
+Ubuntu ships by default.
+
+## Install from source
 
 You need Python 3.10+ and the printer on the same network as your computer.
 
@@ -65,9 +78,8 @@ python3 -m venv .venv
 The interface is in English and Portuguese, picked from your browser language (switch at the top
 right).
 
-The server only listens on `127.0.0.1`, so it is not reachable from other machines. The 3D view
-loads [three.js](https://threejs.org/) from a CDN; without internet, the Layers and Thumbnail tabs
-still work.
+The server only listens on `127.0.0.1`, so it is not reachable from other machines. Everything,
+including the 3D view, works offline.
 
 ## Command line
 
@@ -119,7 +131,9 @@ go in compressed 1 MiB chunks. Everything known about it is in [docs/PROTOCOL.md
 | `halot.py` | Creality HALOT driver (network protocol) |
 | `server.py` | local web server (aiohttp): library, previews, printer connections |
 | `cxdlp.py` | `.cxdlpv4` reader: header, thumbnails, layer images, voxel grid for the 3D view |
+| `desktop.py` | desktop app entry point: background server and tray icon |
 | `static/` | web interface (plain JavaScript, three.js for 3D, `i18n.js` for translations) |
+| `packaging/` | icon, PyInstaller spec and AppImage build script |
 
 ## Contributing
 
@@ -132,7 +146,7 @@ Bug reports, test results with other HALOT models and translations are very welc
   the network protocol and the token algorithm.
 - [UVtools](https://github.com/sn4k3/UVtools) by Tiago Conceição: documentation of the
   `.cxdlpv4` file layout. ResinDeck has its own Python implementation and contains no UVtools code.
-- [three.js](https://threejs.org/) (MIT) for the 3D view.
+- [three.js](https://threejs.org/) (MIT) for the 3D view, bundled in `static/vendor/three/`.
 
 ## License
 

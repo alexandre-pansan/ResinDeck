@@ -46,6 +46,27 @@ first and we can work out the shape together.
 - Keep the server bound to `127.0.0.1`.
 - Do not commit sliced files, settings or passwords.
 
+## Desktop packages and releases
+
+The AppImage and the Windows `.exe` are built with PyInstaller from `desktop.py`
+(`packaging/resindeck.spec`).
+
+```sh
+uv pip install --python .venv/bin/python -r requirements-desktop.txt
+packaging/build_appimage.sh        # Linux: dist/ResinDeck-<version>-x86_64.AppImage
+```
+
+The `.exe` has to be built on Windows: `python -m PyInstaller packaging/resindeck.spec`.
+
+To publish a release, bump `__version__` in `resindeck.py`, commit, then push a matching tag:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The `Release` workflow builds both packages and attaches them to a GitHub release with generated
+notes. Run `packaging/make_icon.py` after changing the icon.
+
 ## Translations
 
 UI strings live in `static/i18n.js`. To add a language, copy the `en` block, give it a language
