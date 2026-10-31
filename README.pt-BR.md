@@ -34,8 +34,8 @@ A ideia é crescer para outras marcas e sistemas com a ajuda da comunidade.
 Precisa de Python 3.10+ e da impressora na mesma rede que o computador.
 
 ```sh
-git clone https://github.com/alexandre-pansan/resindeck.git
-cd resindeck
+git clone https://github.com/alexandre-pansan/ResinDeck.git
+cd ResinDeck
 ./start.sh
 ```
 

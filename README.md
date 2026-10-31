@@ -34,8 +34,8 @@ or Proton. The goal is to grow to more printer brands and systems with help from
 You need Python 3.10+ and the printer on the same network as your computer.
 
 ```sh
-git clone https://github.com/alexandre-pansan/resindeck.git
-cd resindeck
+git clone https://github.com/alexandre-pansan/ResinDeck.git
+cd ResinDeck
 ./start.sh
 ```
 
