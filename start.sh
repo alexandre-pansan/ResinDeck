@@ -1,5 +1,5 @@
 #!/bin/sh
-# Opens the halot-send web interface. Creates the virtualenv on first run.
+# Opens the ResinDeck web interface. Creates the virtualenv on first run.
 cd "$(dirname "$0")" || exit 1
 
 if [ ! -x .venv/bin/python ]; then
@@ -11,4 +11,4 @@ if [ ! -x .venv/bin/python ]; then
     fi
 fi
 
-exec .venv/bin/python -I halot_send.py ui "$@"
+exec .venv/bin/python -I resindeck.py ui "$@"

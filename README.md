@@ -1,7 +1,10 @@
-# halot-send
+# ResinDeck
 
-Send sliced files to Creality HALOT resin printers over the network, straight from Linux.
-No HALOT BOX, no Wine or Proton.
+An open source control deck for resin 3D printers: preview your sliced files in 3D, send them
+to the printer over the network and follow the print, from your own computer.
+
+Today it supports **Creality HALOT** printers, straight from Linux, with no HALOT BOX and no Wine
+or Proton. The goal is to grow to more printer brands and systems with help from the community.
 
 [Leia em português](README.pt-BR.md)
 
@@ -13,12 +16,16 @@ No HALOT BOX, no Wine or Proton.
 - **Command line** for scripts and quick jobs.
 - Reads `.cxdlpv4` files, the format HALOT BOX exports for HALOT printers.
 
-Tested with a **HALOT-R6**. Other HALOT models use the same protocol as far as we know
-(the protocol base comes from a HALOT Mage Pro project), but they have not been tested.
-Reports are welcome.
+## Supported printers
+
+| Printer | Status |
+|---|---|
+| Creality HALOT-R6 | tested: status, upload, print (pause and stop not confirmed yet) |
+| Other Creality HALOT models | same protocol as far as we know, untested; reports welcome |
+| Other brands | not yet; see [CONTRIBUTING.md](CONTRIBUTING.md) to help add one |
 
 > [!WARNING]
-> This is an unofficial tool, not affiliated with or endorsed by Creality. It talks to your
+> This is an unofficial tool, not affiliated with or endorsed by any printer maker. It talks to your
 > printer with a protocol worked out by observation. Check the resin vat and the build plate
 > before starting a print, as you would with the official software.
 
@@ -27,8 +34,8 @@ Reports are welcome.
 You need Python 3.10+ and the printer on the same network as your computer.
 
 ```sh
-git clone https://github.com/alexandre-pansan/halot-send.git
-cd halot-send
+git clone https://github.com/alexandre-pansan/resindeck.git
+cd resindeck
 ./start.sh
 ```
 
@@ -41,7 +48,7 @@ To do it by hand:
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python halot_send.py ui
+.venv/bin/python resindeck.py ui
 ```
 
 ## Using the web interface
@@ -65,26 +72,26 @@ still work.
 ## Command line
 
 ```sh
-halot-send version                       # firmware version, checks the connection
-halot-send status                        # print status
-halot-send send part.cxdlpv4             # upload only
-halot-send send part.cxdlpv4 --print     # upload and print (asks for confirmation)
-halot-send print part.cxdlpv4            # print a file that is already on the printer
-halot-send pause                         # pause / resume
-halot-send stop                          # cancel the print
-halot-send ui                            # web interface (also the default with no command)
+resindeck version                       # firmware version, checks the connection
+resindeck status                        # print status
+resindeck send part.cxdlpv4             # upload only
+resindeck send part.cxdlpv4 --print     # upload and print (asks for confirmation)
+resindeck print part.cxdlpv4            # print a file that is already on the printer
+resindeck pause                         # pause / resume
+resindeck stop                          # cancel the print
+resindeck ui                            # web interface (also the default with no command)
 ```
 
-Run it as `.venv/bin/python halot_send.py ...`, or create a small wrapper script named
-`halot-send` on your `PATH`.
+Run it as `.venv/bin/python resindeck.py ...`, or create a small wrapper script named
+`resindeck` on your `PATH`.
 
 ## Configuration
 
 | What | Where |
 |---|---|
-| Web interface settings (printers, passwords, folders) | `~/.config/halot-send/settings.json`, mode 600, edited from the interface |
-| Command line printer | `~/.config/halot-send/config` (see `config.example`), or the `HALOT_HOST` / `HALOT_PASSWORD` environment variables |
-| 3D preview cache | `~/.cache/halot-send/` |
+| Web interface settings (printers, passwords, folders) | `~/.config/resindeck/settings.json`, mode 600, edited from the interface |
+| Command line printer | `~/.config/resindeck/config` (see `config.example`), or the `RESINDECK_HOST` / `RESINDECK_PASSWORD` environment variables |
+| 3D preview cache | `~/.cache/resindeck/` |
 
 On first start the web interface imports the printer from the command line config.
 
@@ -96,19 +103,20 @@ give a token error, also with HALOT BOX.
 - **"Wrong password (TOKEN_ERROR)"**: the password does not match the one on the printer. Check it
   on the printer screen, or set a new one there.
 - **"The printer is still receiving another file"**: an earlier upload was left half-way. Close
-  any other program connected to the printer (including another halot-send) or restart the
+  any other program connected to the printer (including another ResinDeck) or restart the
   printer.
 - **Printer shows as offline**: check that the IP address is right and that port 18188 is
   reachable from your computer.
 
 ## How it works
 
-The protocol is a WebSocket on port 18188 with JSON commands and a DES-based token; uploads go in
-compressed 1 MiB chunks. Everything known about it is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
+The HALOT protocol is a WebSocket on port 18188 with JSON commands and a DES-based token; uploads
+go in compressed 1 MiB chunks. Everything known about it is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | File | What it does |
 |---|---|
-| `halot_send.py` | printer protocol and command line |
+| `resindeck.py` | command line and entry point |
+| `halot.py` | Creality HALOT driver (network protocol) |
 | `server.py` | local web server (aiohttp): library, previews, printer connections |
 | `cxdlp.py` | `.cxdlpv4` reader: header, thumbnails, layer images, voxel grid for the 3D view |
 | `static/` | web interface (plain JavaScript, three.js for 3D, `i18n.js` for translations) |
@@ -123,7 +131,7 @@ Bug reports, test results with other HALOT models and translations are very welc
 - [HalotMageProSharp](https://github.com/mrtska/HalotMageProSharp) by mrtska (MIT): the base of
   the network protocol and the token algorithm.
 - [UVtools](https://github.com/sn4k3/UVtools) by Tiago Conceição: documentation of the
-  `.cxdlpv4` file layout. halot-send has its own Python implementation and contains no UVtools code.
+  `.cxdlpv4` file layout. ResinDeck has its own Python implementation and contains no UVtools code.
 - [three.js](https://threejs.org/) (MIT) for the 3D view.
 
 ## License

@@ -1,6 +1,6 @@
-"""Local web UI for halot-send: file library, 3D/layer preview and printer manager.
+"""ResinDeck web UI: file library, 3D/layer preview and printer manager.
 
-Listens on 127.0.0.1 only. Started with `halot-send ui`.
+Listens on 127.0.0.1 only. Started with `resindeck ui`.
 """
 import asyncio
 import hashlib
@@ -20,10 +20,11 @@ import websockets
 from aiohttp import WSMsgType, web
 
 import cxdlp
-from halot_send import CONFIG, PORT, Halot, HalotError, load_config
+from halot import PORT, Halot, PrinterError
+from resindeck import CONFIG, load_config
 
 SETTINGS = CONFIG.parent / "settings.json"
-CACHE = Path.home() / ".cache" / "halot-send"
+CACHE = Path.home() / ".cache" / "resindeck"
 STATIC = Path(__file__).parent / "static"
 EXTENSIONS = (".cxdlpv4", ".cxdlp")
 POLL_INTERVAL = 3
@@ -107,14 +108,14 @@ class Printer:
             try:
                 st = await h.status()
                 self.status, self.error = st, None
-            except HalotError as e:
+            except PrinterError as e:
                 self.status, self.error = {}, e.code or str(e)
         self.notify()
 
     async def command(self, obj):
         h = self.halot
         if not h:
-            raise HalotError("The printer is offline.", "offline")
+            raise PrinterError("The printer is offline.", "offline")
         async with self.lock:
             obj = {**obj, "token": h.tok()}
             return await h.request(obj)
@@ -122,10 +123,10 @@ class Printer:
     async def send(self, path: Path, start=False):
         h = self.halot
         if not h:
-            raise HalotError("The printer is offline.", "offline")
+            raise PrinterError("The printer is offline.", "offline")
         st = self.status.get("printStatus", "")
         if st not in IDLE_STATES:
-            raise HalotError(f"The printer is busy ({st}).", "printer_busy", state=st)
+            raise PrinterError(f"The printer is busy ({st}).", "printer_busy", state=st)
         loop = asyncio.get_running_loop()
 
         def progress(pct):
@@ -279,7 +280,7 @@ def json_error(fn):
     async def wrapper(request):
         try:
             return await fn(request)
-        except HalotError as e:
+        except PrinterError as e:
             return web.json_response({"error": str(e), "code": e.code, "params": e.params},
                                      status=400)
         except (OSError, asyncio.TimeoutError, websockets.WebSocketException) as e:
@@ -328,12 +329,12 @@ def clean_printer(body, old=None):
     name = str(body.get("name") or (old or {}).get("name") or "HALOT").strip()[:40]
     host = str(body.get("host") or "").strip()
     if not host:
-        raise HalotError("Enter the printer IP address.", "no_host")
+        raise PrinterError("Enter the printer IP address.", "no_host")
     cfg = {"id": (old or {}).get("id") or uuid.uuid4().hex[:8], "name": name, "host": host,
            "password": (old or {}).get("password", "")}
     if body.get("password") is not None and body["password"] != "":
         if len(body["password"]) > 8:
-            raise HalotError("The password has at most 8 characters.", "password_length")
+            raise PrinterError("The password has at most 8 characters.", "password_length")
         cfg["password"] = body["password"]
     if body.get("clearPassword"):
         cfg["password"] = ""
@@ -449,7 +450,7 @@ async def library_folders(request):
     for f in (await request.json()).get("folders", []):
         p = Path(os.path.expanduser(str(f).strip()))
         if not p.is_dir():
-            raise HalotError(f"Folder does not exist: {p}", "folder_missing", folder=str(p))
+            raise PrinterError(f"Folder does not exist: {p}", "folder_missing", folder=str(p))
         folders.append(str(p.resolve()))
     app.settings["folders"] = list(dict.fromkeys(folders))
     save_settings(app.settings)
@@ -461,14 +462,14 @@ async def library_folders(request):
 async def library_upload(request):
     app = app_of(request)
     if not app.settings["folders"]:
-        raise HalotError("Set up a library folder first.", "no_folder")
+        raise PrinterError("Set up a library folder first.", "no_folder")
     dest_dir = Path(app.settings["folders"][0])
     reader = await request.multipart()
     saved = []
     while (part := await reader.next()) is not None:
         name = Path(part.filename or "").name
         if not name.lower().endswith(EXTENSIONS):
-            raise HalotError(f"Only .cxdlpv4 files: {name}", "only_cxdlp", name=name)
+            raise PrinterError(f"Only .cxdlpv4 files: {name}", "only_cxdlp", name=name)
         dest = dest_dir / name
         tmp = dest.with_suffix(dest.suffix + ".part")
         with open(tmp, "wb") as f:
@@ -487,7 +488,7 @@ async def file_info(request):
     try:
         c = await asyncio.to_thread(load_file, path)
     except ValueError as e:
-        raise HalotError(str(e), "bad_file", detail=str(e))
+        raise PrinterError(str(e), "bad_file", detail=str(e))
     info = c.info()
     info["hasVoxels"] = voxel_cache_path(path).exists()
     info["layers"] = [round(L.z, 4) for L in c.layers]
@@ -572,11 +573,11 @@ async def run(port=8765, open_browser=True):
         await web.TCPSite(runner, "127.0.0.1", port).start()
     except OSError:
         await runner.cleanup()
-        print(f"halot-send is already running at {url}")
+        print(f"ResinDeck is already running at {url}")
         if open_browser:
             webbrowser.open(url)
         return
-    print(f"halot-send running at {url}  (Ctrl+C to quit)")
+    print(f"ResinDeck running at {url}  (Ctrl+C to quit)")
     if open_browser:
         webbrowser.open(url)
     try:

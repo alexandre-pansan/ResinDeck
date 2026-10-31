@@ -1,5 +1,5 @@
-# Config for the command line (copy to ~/.config/halot-send/config, chmod 600).
-# The web interface keeps its own settings in ~/.config/halot-send/settings.json.
+# Config for the command line (copy to ~/.config/resindeck/config, chmod 600).
+# The web interface keeps its own settings in ~/.config/resindeck/settings.json.
 HOST=192.168.0.50
 # network password set/shown on the printer screen (max. 8 characters)
 PASSWORD=

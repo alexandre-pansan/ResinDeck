@@ -1,6 +1,6 @@
 # HALOT network protocol
 
-What halot-send knows about how Creality HALOT resin printers talk over the network.
+What ResinDeck knows about how Creality HALOT resin printers talk over the network.
 It comes from [HalotMageProSharp](https://github.com/mrtska/HalotMageProSharp) (MIT) and from
 watching what HALOT BOX 4.7.0.10 does with a **HALOT-R6** (firmware `version: "1"`).
 Other models and firmware may differ; corrections are welcome.
@@ -21,7 +21,7 @@ network password shown on the printer screen (1 to 8 ASCII characters):
 2. Encrypt with single DES, CBC mode, key `a85e9d68` (ASCII), IV of eight zero bytes.
 3. Keep the first 8 bytes of the ciphertext.
 4. HalotMageProSharp appends the constant `AC 47 B0 02 88 15 6E 5C` when the password is longer
-   than 4 characters. HALOT BOX 4.7 was seen sending only the 8 bytes. halot-send tries both.
+   than 4 characters. HALOT BOX 4.7 was seen sending only the 8 bytes. ResinDeck tries both.
 5. Base64.
 
 A wrong token does not close the connection. `GET_PRINT_STATUS` answers with
@@ -36,7 +36,7 @@ A wrong token does not close the connection. `GET_PRINT_STATUS` answers with
 | `START_PRINT` | `token`, `filename` | `{"cmd": "START_PRINT", ...}` |
 | `PRINT_PAUSE` | `token` | pauses, or resumes when paused |
 | `PRINT_STOP` | `token` | cancels the print |
-| `PRINT_PARA_SET` | `token`, `bottomExposureNum`, `delayLight`, `eleSpeed`, `initExposure`, `printExposure`, `printHeight` | not used by halot-send |
+| `PRINT_PARA_SET` | `token`, `bottomExposureNum`, `delayLight`, `eleSpeed`, `initExposure`, `printExposure`, `printHeight` | not used by ResinDeck |
 | `START_FILE` / `START_DATA` / `CHECK_DATA` / `CANCEL_FILE` | see [Upload](#upload) | |
 
 ### Status
