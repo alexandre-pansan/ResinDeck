@@ -1,0 +1,4 @@
+websockets>=13
+cryptography>=43
+aiohttp>=3.9
+numpy>=1.26

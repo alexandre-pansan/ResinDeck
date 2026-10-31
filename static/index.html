@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>halot-send</title>
+<link rel="stylesheet" href="/static/style.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<header>
+  <h1>halot-send</h1>
+  <span id="conn" class="conn off" data-i18n="conn.server" data-i18n-title="conn.title"></span>
+  <select id="lang" class="lang" aria-label="Language"></select>
+</header>
+
+<main>
+  <aside>
+    <section>
+      <div class="section-head">
+        <h2 data-i18n="printers.title"></h2>
+        <button id="add-printer" class="ghost" data-i18n="printers.add" data-i18n-title="printers.addTitle"></button>
+      </div>
+      <div id="printers"></div>
+    </section>
+
+    <section class="grow">
+      <div class="section-head">
+        <h2 data-i18n="library.title"></h2>
+        <button id="edit-folders" class="ghost" data-i18n="library.folders" data-i18n-title="library.foldersTitle"></button>
+      </div>
+      <input id="filter" type="search" data-i18n-placeholder="library.filter">
+      <div id="library" class="library"></div>
+      <label id="drop" class="drop">
+        <span data-i18n="library.drop"></span>
+        <input id="upload" type="file" accept=".cxdlpv4,.cxdlp" multiple hidden>
+      </label>
+    </section>
+  </aside>
+
+  <section id="viewer" class="viewer">
+    <div id="empty" class="empty" data-i18n="viewer.empty"></div>
+
+    <div id="file-view" hidden>
+      <div class="file-head">
+        <div>
+          <h2 id="file-name"></h2>
+          <div id="file-meta" class="muted"></div>
+        </div>
+        <div class="tabs" role="tablist">
+          <button data-tab="3d" class="active" data-i18n="viewer.tab3d"></button>
+          <button data-tab="layers" data-i18n="viewer.tabLayers"></button>
+          <button data-tab="thumb" data-i18n="viewer.tabThumb"></button>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div id="tab-3d" class="tab">
+          <canvas id="three"></canvas>
+          <div id="vox-status" class="overlay"></div>
+          <div id="follow-badge" class="badge" hidden></div>
+        </div>
+        <div id="tab-layers" class="tab" hidden>
+          <img id="layer-img" alt="">
+        </div>
+        <div id="tab-thumb" class="tab" hidden>
+          <img id="thumb-img" alt="">
+        </div>
+      </div>
+
+      <div class="slider-row">
+        <span class="muted" data-i18n="viewer.layer"></span>
+        <input id="layer" type="range" min="0" max="0" value="0">
+        <span id="layer-label" class="mono"></span>
+      </div>
+
+      <div class="bottom">
+        <dl id="stats" class="stats"></dl>
+        <div class="actions">
+          <select id="target" data-i18n-title="send.target"></select>
+          <button id="send" data-i18n="send.send"></button>
+          <button id="send-print" class="primary" data-i18n="send.sendPrint"></button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="printer-dialog">
+  <form method="dialog" id="printer-form">
+    <h3 id="printer-dialog-title"></h3>
+    <label><span data-i18n="printerDialog.name"></span> <input name="name" placeholder="HALOT-R6" maxlength="40"></label>
+    <label><span data-i18n="printerDialog.host"></span> <input name="host" placeholder="192.168.0.50" required></label>
+    <label><span data-i18n="printerDialog.password"></span> <input name="password" type="password" maxlength="8"
+      autocomplete="off" data-i18n-placeholder="printerDialog.passwordPlaceholder"></label>
+    <p id="pw-hint" class="muted small" hidden data-i18n="printerDialog.passwordKeep"></p>
+    <div class="scan">
+      <button type="button" id="scan" class="ghost" data-i18n="printerDialog.scan"></button>
+      <div id="scan-results"></div>
+    </div>
+    <p id="printer-error" class="error"></p>
+    <div class="dialog-actions">
+      <button type="button" id="printer-delete" class="danger ghost" hidden data-i18n="printerDialog.remove"></button>
+      <span class="spacer"></span>
+      <button value="cancel" formnovalidate data-i18n="dialog.cancel"></button>
+      <button id="printer-save" value="save" class="primary" data-i18n="dialog.save"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="folders-dialog">
+  <form method="dialog" id="folders-form">
+    <h3 data-i18n="library.foldersTitle"></h3>
+    <p class="muted small" data-i18n="foldersDialog.hint"></p>
+    <textarea name="folders" rows="4"></textarea>
+    <p id="folders-error" class="error"></p>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button value="cancel" formnovalidate data-i18n="dialog.cancel"></button>
+      <button value="save" class="primary" data-i18n="dialog.save"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="confirm-dialog">
+  <form method="dialog">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-text"></p>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button value="cancel" data-i18n="dialog.cancel"></button>
+      <button id="confirm-ok" value="ok" class="primary"></button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
