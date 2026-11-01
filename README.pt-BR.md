@@ -165,3 +165,7 @@ Relatos de bugs, testes com outros modelos HALOT e traduções são muito bem-vi
 
 [MIT](LICENSE). "Creality" e "HALOT" são marcas de seus respectivos donos e aparecem aqui apenas
 para descrever compatibilidade.
+
+> E sim, isso aqui foi feito inteirinho usando o Claude (ou Claudinho, para os íntimos). A única parte feita por um humano é esta, que é mais ou menos assim: dabadee dabadaa.
+> Sou totalmente a favor de usar IA para criar builds, apps, sonhos, modelos, logos e imagens, principalmente quando é preciso pesquisar a fundo ou quando a gente não entende direito como algo funciona. Fique à vontade para usar, só não esqueça de testar tudo e de ser gentil com a IA. Afinal, nunca se sabe quando a Skynet vai vir atrás da gente :D.
+> Eu não entendo muito bem como essa comunicação funciona nem como consegui fazer isso. O máximo que fiz foi apontar umas melhorias na interface, então não me julgue! Só estou aqui para facilitar a vida de quem usa Unix na hora de imprimir em 3D. (Afinal, rodar nativo é melhor do que ficar no WINE!)
