@@ -19,7 +19,7 @@ from pathlib import Path
 
 import websockets
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # start.sh runs Python with -I
 from halot import Halot, PrinterError, fmt_status  # noqa: E402
