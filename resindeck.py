@@ -47,7 +47,8 @@ def load_config():
 
 
 async def main():
-    ap = argparse.ArgumentParser(prog="resindeck", description="Send files to resin printers over the network and control them.")
+    ap = argparse.ArgumentParser(
+        prog="resindeck", description="Send files to resin printers over the network and control them.")
     ap.add_argument("--host", help="printer IP (default: from config)")
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("version", help="firmware version (no password needed)")
@@ -101,7 +102,10 @@ async def main():
                 if st.get("printStatus") not in (None, "", "PRINT_GENERAL", "PRINT_COMPLETE", "PRINT_STOP"):
                     print(f"Warning: the printer is in '{st.get('printStatus')}'.", file=sys.stderr)
                 print(f"Uploading {a.file.name} ({a.file.stat().st_size / 1e6:.1f} MB) to {host}...")
-                r = await h.upload(a.file, on_progress=lambda pct: print(f"\r  uploading... {pct:3d}%", end="", flush=True))
+                def progress(pct):
+                    print(f"\r  uploading... {pct:3d}%", end="", flush=True)
+
+                r = await h.upload(a.file, on_progress=progress)
                 print()
                 print(f"Upload finished (checkstate={r.get('checkstate')}).")
                 if a.print and confirm(a.file.name):

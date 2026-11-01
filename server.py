@@ -5,11 +5,13 @@ this computer has full access, other devices need the PIN shown in the interface
 RESINDECK_LAN=0 to listen on 127.0.0.1 only.
 """
 import asyncio
+import base64
 import hashlib
 import io
 import ipaddress
 import json
 import os
+import re
 import secrets
 import socket
 import struct
@@ -208,7 +210,7 @@ def load_file(path: Path):
 
 def voxel_cache_path(path: Path):
     st = path.stat()
-    key = hashlib.sha1(f"{path}|{st.st_mtime}|{st.st_size}".encode()).hexdigest()[:16]
+    key = hashlib.sha1(f"{path}|{st.st_mtime}|{st.st_size}".encode(), usedforsecurity=False).hexdigest()[:16]
     return CACHE / f"vox-{key}.bin"
 
 
@@ -320,6 +322,17 @@ def json_error(fn):
     return wrapper
 
 
+async def read_json(request):
+    """The request body as a JSON object; a PrinterError (HTTP 400) when it is not one."""
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise PrinterError("Invalid request.", "bad_request")
+    return body
+
+
 # --- access from other devices ---------------------------------------------------
 
 _own = {}  # ip -> (is one of this machine's addresses, checked at)
@@ -401,8 +414,10 @@ OPEN_PATHS = ("/api/session", "/api/login")
 async def guard(request, handler):
     if is_local(request) and not trusted_host(request.host):
         raise web.HTTPForbidden(text="unexpected Host header")
+    # browsers send Origin on cross-site fetches and on every WebSocket handshake, which CORS
+    # does not protect: without this a page on any site could read /ws
     origin = request.headers.get("Origin")
-    if request.method not in ("GET", "HEAD") and origin and urlsplit(origin).netloc != request.host:
+    if origin and urlsplit(origin).netloc != request.host:
         raise web.HTTPForbidden(text="cross-origin request")
     protected = request.path.startswith("/api/") or request.path == "/ws"
     if protected and request.path not in OPEN_PATHS and not authorized(request):
@@ -416,11 +431,47 @@ def local_only(request):
         raise web.HTTPForbidden(text="only from the computer running ResinDeck")
 
 
+@lru_cache(maxsize=1)
+def content_security_policy():
+    # the import map is the only inline script: allow exactly that one by its hash
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    m = re.search(r'<script type="importmap">(.*?)</script>', html, re.S)
+    script = "'self'"
+    if m:
+        digest = base64.b64encode(hashlib.sha256(m.group(1).encode()).digest()).decode()
+        script += f" 'sha256-{digest}'"
+    return ("default-src 'self'; "
+            f"script-src {script}; "
+            "style-src 'self' 'unsafe-inline'; "  # progress bars set style="width:…"
+            "img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+
+@web.middleware
+async def security_headers(request, handler):
+    try:
+        res = await handler(request)
+    except web.HTTPException as e:
+        res = e
+    if not res.prepared:  # WebSocket and streamed responses already sent their headers
+        res.headers.setdefault("X-Content-Type-Options", "nosniff")
+        res.headers.setdefault("X-Frame-Options", "DENY")
+        res.headers.setdefault("Referrer-Policy", "no-referrer")
+        res.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+        res.headers.setdefault("Content-Security-Policy", content_security_policy())
+    if isinstance(res, web.HTTPException):
+        raise res
+    return res
+
+
 routes = web.RouteTableDef()
 
 
+APP = web.AppKey("halot", App)
+
+
 def app_of(request) -> App:
-    return request.app["halot"]
+    return request.app[APP]
 
 
 @routes.get("/")
@@ -465,7 +516,7 @@ async def login(request):
     count, until = app.login_failures.get(ip, (0, 0))
     if time.monotonic() < until:
         raise PrinterError("Too many attempts. Wait a minute.", "pin_wait")
-    pin = str((await request.json()).get("pin") or "").strip()
+    pin = str((await read_json(request)).get("pin") or "").strip()
     if not secrets.compare_digest(pin, app.settings["pin"]):
         count += 1
         app.login_failures[ip] = (count, time.monotonic() + 60 if count >= 5 else 0)
@@ -578,7 +629,8 @@ def clean_printer(body, old=None):
 @json_error
 async def printer_add(request):
     app = app_of(request)
-    cfg = clean_printer(await request.json())
+    local_only(request)
+    cfg = clean_printer(await read_json(request))
     app.settings["printers"].append(cfg)
     save_settings(app.settings)
     app.printers[cfg["id"]] = Printer(cfg, app.notify)
@@ -589,9 +641,10 @@ async def printer_add(request):
 @routes.put("/api/printers/{id}")
 @json_error
 async def printer_edit(request):
+    local_only(request)
     app = app_of(request)
     old = app.printer(request)
-    cfg = clean_printer(await request.json(), old.cfg)
+    cfg = clean_printer(await read_json(request), old.cfg)
     app.settings["printers"] = [cfg if c["id"] == cfg["id"] else c for c in app.settings["printers"]]
     save_settings(app.settings)
     await old.close()
@@ -603,6 +656,7 @@ async def printer_edit(request):
 @routes.delete("/api/printers/{id}")
 @json_error
 async def printer_delete(request):
+    local_only(request)
     app = app_of(request)
     p = app.printer(request)
     await p.close()
@@ -616,6 +670,7 @@ async def printer_delete(request):
 @routes.post("/api/printers/scan")
 @json_error
 async def printer_scan(request):
+    local_only(request)
     known = {c["host"] for c in app_of(request).settings["printers"]}
     hosts = [str(h) for net in local_networks() for h in net.hosts()]
     sem = asyncio.Semaphore(128)
@@ -634,7 +689,7 @@ async def printer_scan(request):
 async def printer_send(request):
     app = app_of(request)
     p = app.printer(request)
-    body = await request.json()
+    body = await read_json(request)
     path = app.resolve(body.get("path"))
     return web.json_response(await p.send(path, start=bool(body.get("print"))))
 
@@ -645,8 +700,10 @@ async def printer_action(request):
     p = app_of(request).printer(request)
     action = request.match_info["action"]
     if action == "print":
-        body = await request.json()
-        r = await p.command({"cmd": "START_PRINT", "filename": body["filename"]})
+        filename = str((await read_json(request)).get("filename") or "")
+        if not filename:
+            raise PrinterError("Invalid request.", "bad_request")
+        r = await p.command({"cmd": "START_PRINT", "filename": filename})
     elif action == "pause":
         r = await p.command({"cmd": "PRINT_PAUSE"})
     else:
@@ -678,9 +735,13 @@ async def library(request):
 @routes.put("/api/library/folders")
 @json_error
 async def library_folders(request):
+    local_only(request)  # a paired phone must not point the library at other folders
     app = app_of(request)
     folders = []
-    for f in (await request.json()).get("folders", []):
+    raw = (await read_json(request)).get("folders", [])
+    if not isinstance(raw, list):
+        raise PrinterError("Invalid request.", "bad_request")
+    for f in raw:
         p = Path(os.path.expanduser(str(f).strip()))
         if not p.is_dir():
             raise PrinterError(f"Folder does not exist: {p}", "folder_missing", folder=str(p))
@@ -721,7 +782,7 @@ async def file_info(request):
     try:
         c = await asyncio.to_thread(load_file, path)
     except ValueError as e:
-        raise PrinterError(str(e), "bad_file", detail=str(e))
+        raise PrinterError(str(e), "bad_file", detail=str(e)) from e
     info = c.info()
     info["hasVoxels"] = voxel_cache_path(path).exists()
     info["layers"] = [round(L.z, 4) for L in c.layers]
@@ -748,7 +809,10 @@ async def file_layer(request):
     app = app_of(request)
     path = app.resolve(request.query.get("path"))
     c = await asyncio.to_thread(load_file, path)
-    n = int(request.query.get("n", 0))
+    try:
+        n = int(request.query.get("n", 0))
+    except ValueError:
+        n = -1
     if not 0 <= n < len(c.layers):
         raise web.HTTPBadRequest(text="invalid layer")
     png = await asyncio.to_thread(lambda: cxdlp.png_bytes(c.layer_image(n)))
@@ -782,8 +846,8 @@ async def file_voxels(request):
 
 def make_app():
     halot = App()
-    app = web.Application(client_max_size=1 << 30, middlewares=[guard])
-    app["halot"] = halot
+    app = web.Application(client_max_size=1 << 30, middlewares=[security_headers, guard])
+    app[APP] = halot
     app.add_routes(routes)
     app.router.add_static("/static", STATIC)
 
@@ -811,13 +875,14 @@ async def browser_url(port):
 async def run(port=8765, open_browser=True):
     url = f"http://127.0.0.1:{port}/"
     web_app = make_app()
-    state = web_app["halot"]
+    state = web_app[APP]
     state.port = port
     runner = web.AppRunner(web_app)
     await runner.setup()
     try:
         if LAN:
-            await web.TCPSite(runner, "0.0.0.0", port).start()
+            # on purpose: phones reach it over the LAN; guard() requires the PIN for them
+            await web.TCPSite(runner, "0.0.0.0", port).start()  # nosec B104
         else:
             await web.TCPSite(runner, "127.0.0.1", port).start()
     except OSError:

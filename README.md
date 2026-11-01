@@ -1,5 +1,7 @@
 # ResinDeck
 
+[![CI](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml)
+
 An open source control deck for resin 3D printers: preview your sliced files in 3D, send them
 to the printer over the network and follow the print, from your own computer.
 
@@ -94,7 +96,9 @@ interface: progress, 3D view, pause and stop.
 - `resindeck.local` needs mDNS: it works on iPhone, Windows, macOS and Linux, but not on some
   Android phones: there, open the IP address shown under the QR code.
 - On Windows, allow ResinDeck when the firewall asks on the first run.
-- To keep ResinDeck reachable only from this computer, start it with `RESINDECK_LAN=0`.
+- Printer settings and library folders can only be changed on the computer.
+- To keep ResinDeck reachable only from this computer, start it with `RESINDECK_LAN=0`. More in
+  [SECURITY.md](SECURITY.md).
 
 ## Command line
 

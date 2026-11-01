@@ -11,7 +11,11 @@ permissions:
   contents: write
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   linux:
+    needs: ci
     runs-on: ubuntu-22.04  # older glibc, so the AppImage runs on more distros
     steps:
       - uses: actions/checkout@v5
@@ -25,12 +29,13 @@ jobs:
           test "${GITHUB_REF_NAME}" = "v${version}" || { echo "tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
       - run: pip install -r requirements-desktop.txt
       - run: sh packaging/build_appimage.sh python
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: linux
           path: dist/*.AppImage
 
   windows:
+    needs: ci
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -45,7 +50,7 @@ jobs:
           version=$(python -c 'import re; print(re.search(r"__version__ = \"(.+)\"", open("resindeck.py").read())[1])')
           mkdir -p dist
           mv build/dist/ResinDeck.exe "dist/ResinDeck-${version}-windows-x64.exe"
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: windows
           path: dist/*.exe

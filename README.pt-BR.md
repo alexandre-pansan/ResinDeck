@@ -1,5 +1,7 @@
 # ResinDeck
 
+[![CI](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml)
+
 Um painel de controle open source para impressoras 3D de resina: veja seus arquivos fatiados em
 3D, envie para a impressora pela rede e acompanhe a impressão, do seu próprio computador.
 
@@ -94,7 +96,9 @@ interface completa: progresso, visualização 3D, pausar e parar.
 - O `resindeck.local` depende de mDNS: funciona no iPhone, Windows, macOS e Linux, mas não em
   alguns Androids: nesses, abra o endereço IP que aparece embaixo do QR code.
 - No Windows, permita o ResinDeck quando o firewall perguntar na primeira execução.
-- Para deixar o ResinDeck acessível só neste computador, inicie com `RESINDECK_LAN=0`.
+- As configurações das impressoras e as pastas da biblioteca só podem ser mudadas no computador.
+- Para deixar o ResinDeck acessível só neste computador, inicie com `RESINDECK_LAN=0`. Mais detalhes
+  no [SECURITY.md](SECURITY.md) (em inglês).
 
 ## Linha de comando
 

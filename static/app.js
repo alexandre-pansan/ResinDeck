@@ -10,6 +10,7 @@ const state = {
   info: null,      // /api/file/info of that file
   tab: "3d",
   follow: null,    // printer id whose progress drives the slider
+  local: false,    // this computer (printer and folder settings are only changed here)
 };
 
 let viewer = null;          // Viewer3D, loaded lazily
@@ -152,8 +153,8 @@ function renderPrinters() {
         ] : null,
         v.active && local && state.follow !== p.id
           ? el("button", { class: "small", onclick: () => openFile(local, p.id) }, t("printers.follow")) : null,
-        el("button", { class: "ghost small", title: t("printers.configureTitle"), onclick: () => openPrinterDialog(p) },
-          t("printers.configure"))),
+        state.local ? el("button", { class: "ghost small", title: t("printers.configureTitle"),
+          onclick: () => openPrinterDialog(p) }, t("printers.configure")) : null),
     );
     box.append(card);
   }
@@ -260,7 +261,7 @@ function renderLibrary() {
   const box = $("#library");
   box.replaceChildren();
   if (!state.folders.length) {
-    box.append(el("div", { class: "empty-note" }, t("library.noFolder")));
+    box.append(el("div", { class: "empty-note" }, state.local ? t("library.noFolder") : t("library.empty")));
     return;
   }
   const files = state.files.filter((f) => f.name.toLowerCase().includes(filter));
@@ -617,7 +618,8 @@ async function start() {
   const hash = new URLSearchParams(location.hash.slice(1));
   const session = await api("/api/session");
   if (!session.authorized) return showLogin();
-  $("#remote-btn").hidden = $("#quit-btn").hidden = !session.local;
+  state.local = session.local;
+  for (const id of ["#remote-btn", "#quit-btn", "#add-printer", "#edit-folders"]) $(id).hidden = !session.local;
   connect();
   await loadLibrary();
   const path = hash.get("file");

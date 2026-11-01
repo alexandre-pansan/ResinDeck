@@ -1,0 +1,27 @@
+# Tool settings only: ResinDeck is not packaged as a library.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error::pytest.PytestUnraisableExceptionWarning"]
+
+[tool.coverage.run]
+source = ["."]
+branch = true
+omit = ["tests/*", "packaging/*", ".venv/*", "build/*", "dist/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if __name__ == .__main__.:"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["static/vendor", "build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]

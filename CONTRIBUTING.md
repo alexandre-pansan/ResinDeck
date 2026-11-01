@@ -45,7 +45,33 @@ first and we can work out the shape together.
   the server after changing Python code.
 - The server listens on the network: every `/api` route and `/ws` need the PIN session unless
   the request comes from this computer (see `guard` in `server.py`). Keep new routes under `/api`.
+- Changes that only paired devices should not make (settings, files on disk) must call
+  `local_only(request)`. See [SECURITY.md](SECURITY.md).
 - Do not commit sliced files, settings or passwords.
+
+## Tests and checks
+
+```sh
+uv pip install --python .venv/bin/python -r requirements-dev.txt   # or: .venv/bin/pip install -r ...
+.venv/bin/python -m pytest --cov          # tests and coverage
+.venv/bin/ruff check .                    # lint
+.venv/bin/bandit -c pyproject.toml -r . -ll
+.venv/bin/pip-audit -r requirements-desktop.txt
+```
+
+The tests need no printer and no sliced files: `tests/fakeprinter.py` is a fake HALOT that speaks
+the network protocol (including the error cases), and `tests/cxdlp_writer.py` writes small
+synthetic `.cxdlpv4` files. Add a test with every change; CI fails below 90% coverage.
+
+Every pull request runs `.github/workflows/ci.yml`:
+
+- lint (ruff, JavaScript and shell syntax);
+- tests with coverage on Linux and Windows, Python 3.10 and 3.12;
+- bandit and pip-audit;
+- a smoke test that builds the AppImage and the `.exe`, starts them and checks that the interface
+  answers.
+
+The release workflow runs the same checks before publishing.
 
 ## Desktop packages and releases
 
