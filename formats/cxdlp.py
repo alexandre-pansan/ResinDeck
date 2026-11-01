@@ -267,19 +267,3 @@ def verify_checksum(path) -> bool:
     data = Path(path).read_bytes()
     crc = zlib.crc32(data[:-4], 0xFFFFFFFF) ^ 0xFFFFFFFF
     return crc == struct.unpack(">I", data[-4:])[0]
-
-
-def png_bytes(img: np.ndarray) -> bytes:
-    """Minimal PNG encoder for gray (h, w) or RGB (h, w, 3) uint8 arrays."""
-    h, w = img.shape[:2]
-    color = 2 if img.ndim == 3 else 0
-    raw = np.zeros((h, img[0].size + 1), dtype=np.uint8)
-    raw[:, 1:] = img.reshape(h, -1)
-
-    def chunk(tag, data):
-        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
-
-    return (b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, color, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(raw.tobytes(), 6))
-            + chunk(b"IEND", b""))

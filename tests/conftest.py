@@ -28,8 +28,8 @@ def sliced(tmp_path):
 
 @pytest.fixture
 async def printer(monkeypatch):
-    """A fake HALOT on 127.0.0.1; halot.PORT is pointed at it."""
-    import halot
+    """A fake HALOT on 127.0.0.1; drivers.halot.PORT is pointed at it."""
+    from drivers import halot
 
     fake = FakePrinter()
     await fake.start()

@@ -3,6 +3,8 @@
 WebSocket on port 18188. Based on the MIT-licensed
 https://github.com/mrtska/HalotMageProSharp plus what HALOT BOX 4.7 does on the
 HALOT-R6. Details in docs/PROTOCOL.md.
+
+`Halot` speaks the protocol; `HalotDriver` adapts it to the Driver contract (drivers/base.py).
 """
 import asyncio
 import base64
@@ -17,6 +19,9 @@ from cryptography.hazmat.decrepit.ciphers.algorithms import TripleDES
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, modes
 
+from drivers import base
+from drivers.base import Driver, PrinterError, Status, tcp_open
+
 PORT = 18188
 DES_KEY = b"a85e9d68"
 CHUNK = 1 << 20
@@ -24,20 +29,11 @@ CHECK_OK = (1, 0)  # R6 answers 1 on success; HalotMageProSharp documents 0
 LOWER_KEY = bytes([0xAC, 0x47, 0xB0, 0x02, 0x88, 0x15, 0x6E, 0x5C])
 
 
-class PrinterError(Exception):
-    """An error meant for the user. `code` and `params` let the web UI translate it."""
-
-    def __init__(self, message, code=None, **params):
-        super().__init__(message)
-        self.code = code
-        self.params = params
-
-
 def token(password: str, lower_key=True) -> str:
     """HalotMageProSharp appends LOWER_KEY for passwords over 4 chars; HALOT BOX 4.7 (R6) was
     seen sending only the 8 DES bytes, so both forms are tried (see Halot.status)."""
     if not 1 <= len(password) <= 8:
-        raise PrinterError("The printer password must be 1 to 8 characters long.", "password_length")
+        raise PrinterError("The printer password must be 1 to 8 characters long.", "password_length", max=8)
     padder = padding.PKCS7(64).padder()
     data = padder.update(password.encode("ascii")) + padder.finalize()
     # 3DES with K1 == K2 == K3 is single DES
@@ -173,17 +169,95 @@ class Halot:
                 return r
 
 
-def fmt_status(r):
-    st = r.get("printStatus", "?")
-    lines = [f"State:     {st}"]
-    if r.get("filename"):
-        lines.append(f"File:      {r['filename']}")
-    total = int(r.get("sliceLayerCount") or 0)
-    if total:
-        cur = int(r.get("curSliceLayer") or 0)
-        lines.append(f"Layer:     {cur}/{total} ({cur * 100 // total}%)")
-    rem = r.get("printRemainTime")
-    if rem not in (None, "", "0", 0):
-        s = int(rem)
-        lines.append(f"Remaining: {s // 3600}h{s % 3600 // 60:02d}min")
-    return "\n".join(lines)
+# printStatus values seen from HALOT BOX, HalotMageProSharp and the R6
+STATES = {
+    "": base.IDLE,
+    "PRINT_GENERAL": base.IDLE,
+    "PRINT_PROCESSING": base.PRINTING,
+    "PRINT_PROGRESS": base.PRINTING,
+    "PRINT_PRINTING": base.PRINTING,
+    "PRINT_PAUSING": base.PAUSING,
+    "PRINT_PAUSE": base.PAUSED,
+    "PRINT_STOPING": base.STOPPING,  # sic, as the firmware spells it
+    "PRINT_STOPPING": base.STOPPING,
+    "PRINT_STOP": base.STOPPED,
+    "PRINT_COMPLETING": base.FINISHING,
+    "PRINT_COMPLETE": base.FINISHED,
+    "PRINT_END": base.FINISHED,
+    "PRINT_FAIL": base.FAILED,
+}
+
+
+def _int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def parse_status(r):
+    code = r.get("printStatus") or ""
+    return Status(state=STATES.get(code, base.UNKNOWN), file=r.get("filename") or "",
+                  layer=_int(r.get("curSliceLayer")), layers=_int(r.get("sliceLayerCount")),
+                  remaining=_int(r.get("printRemainTime")), code=code, raw=r)
+
+
+class HalotDriver(Driver):
+    id = "halot"
+    name = "Creality HALOT"
+    models = "HALOT-R6 (tested); other HALOT models with network printing should work"
+    extensions = (".cxdlpv4", ".cxdlp")
+    password = True
+    password_max = 8
+
+    async def connect(self):
+        self.halot = Halot(self.host, self.secret)
+        await self.halot.__aenter__()
+        r = await self.halot.request({"cmd": "VERSION_CHECK"})
+        self.version = r.get("version")
+
+    async def close(self):
+        await self.halot.__aexit__()
+
+    async def ping(self):
+        await self.halot.request({"cmd": "VERSION_CHECK"})
+
+    async def status(self):
+        return parse_status(await self.halot.status())
+
+    async def upload(self, path, on_progress=None):
+        self.halot.tok()  # fail before sending anything when the password is missing
+        r = await self.halot.upload(Path(path), on_progress=on_progress)
+        return {"checkstate": r.get("checkstate")}
+
+    async def command(self, obj):
+        return await self.halot.request({**obj, "token": self.halot.tok()})
+
+    async def start(self, filename):
+        return await self.command({"cmd": "START_PRINT", "filename": filename})
+
+    async def pause(self):
+        return await self.command({"cmd": "PRINT_PAUSE"})
+
+    async def resume(self):
+        return await self.command({"cmd": "PRINT_PAUSE"})  # the same command toggles
+
+    async def stop(self):
+        return await self.command({"cmd": "PRINT_STOP"})
+
+    @classmethod
+    def check_password(cls, password):
+        if len(password) > cls.password_max:
+            raise PrinterError("The password has at most 8 characters.", "password_length", max=8)
+
+    @classmethod
+    async def probe(cls, host, timeout=1.5):
+        if not await tcp_open(host, PORT):
+            return False
+        try:
+            async with websockets.connect(f"ws://{host}:{PORT}", open_timeout=timeout) as ws:
+                await ws.send(json.dumps({"cmd": "VERSION_CHECK"}))
+                msg = await asyncio.wait_for(ws.recv(), timeout)
+                return json.loads(msg).get("version") is not None
+        except (OSError, asyncio.TimeoutError, websockets.WebSocketException, ValueError):
+            return False

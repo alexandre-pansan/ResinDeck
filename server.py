@@ -26,17 +26,16 @@ import numpy as np
 import websockets
 from aiohttp import WSMsgType, web
 
-import cxdlp
+import drivers
+import formats
 import lan
-from halot import PORT, Halot, PrinterError
+from drivers import PrinterError
 from resindeck import CONFIG, load_config
 
 SETTINGS = CONFIG.parent / "settings.json"
 CACHE = Path.home() / ".cache" / "resindeck"
 STATIC = Path(__file__).parent / "static"
-EXTENSIONS = (".cxdlpv4", ".cxdlp")
 POLL_INTERVAL = 3
-IDLE_STATES = ("", "PRINT_GENERAL", "PRINT_COMPLETE", "PRINT_STOP")
 LAN = os.environ.get("RESINDECK_LAN", "1") != "0"
 SESSION_COOKIE = "resindeck_session"
 
@@ -50,8 +49,10 @@ def load_settings():
         s = {"printers": [], "folders": []}
         cfg = load_config()  # migrate the CLI config
         if cfg["HOST"]:
-            s["printers"].append({"id": uuid.uuid4().hex[:8], "name": "HALOT",
+            s["printers"].append({"id": uuid.uuid4().hex[:8], "name": "HALOT", "driver": drivers.DEFAULT,
                                   "host": cfg["HOST"], "password": cfg["PASSWORD"]})
+    for printer in s["printers"]:
+        printer.setdefault("driver", drivers.DEFAULT)  # settings from before drivers existed
     s.setdefault("pin", new_pin())
     # devices that entered the PIN: {"id", "hash" (sha256 of the cookie), "name", "ip", "created"}
     s["sessions"] = [x for x in s.get("sessions", []) if isinstance(x, dict)]
@@ -73,14 +74,17 @@ def save_settings(s):
 # --- printers -------------------------------------------------------------------
 
 class Printer:
+    """Keeps a connection to one printer through its driver, polls its status and runs commands."""
+
     def __init__(self, cfg, notify):
         self.cfg = cfg
         self.notify = notify
+        self.driver = drivers.get(cfg.get("driver"))
         self.lock = asyncio.Lock()
-        self.halot = None
+        self.conn = None  # connected driver instance
         self.online = False
         self.version = None
-        self.status = {}
+        self.status = None
         self.error = None
         self.upload = None  # {"file", "pct"}
         self.task = asyncio.create_task(self.loop())
@@ -88,62 +92,65 @@ class Printer:
     def public(self):
         return {
             "id": self.cfg["id"], "name": self.cfg["name"], "host": self.cfg["host"],
-            "hasPassword": bool(self.cfg.get("password")), "online": self.online,
-            "version": self.version, "status": self.status, "error": self.error,
-            "upload": self.upload,
+            "driver": self.driver.id, "driverName": self.driver.name, "extensions": list(self.driver.extensions),
+            "hasPassword": bool(self.cfg.get("password")), "needsPassword": self.driver.password,
+            "online": self.online, "version": self.version,
+            "status": self.status.public() if self.status else None,
+            "error": self.error, "upload": self.upload,
         }
 
     async def loop(self):
         while True:
             try:
-                async with Halot(self.cfg["host"], self.cfg.get("password", "")) as h:
-                    self.halot = h
-                    async with self.lock:
-                        r = await h.request({"cmd": "VERSION_CHECK"})
-                    self.online, self.version, self.error = True, r.get("version"), None
+                async with self.driver(self.cfg["host"], self.cfg.get("password", "")) as d:
+                    self.conn = d
+                    self.online, self.version, self.error = True, d.version, None
                     self.notify()
                     while True:
-                        await self.poll(h)
+                        await self.poll()
                         await asyncio.sleep(POLL_INTERVAL)
             except asyncio.CancelledError:
                 raise
             except Exception:
-                self.halot = None
-                was_online = self.online
-                self.online, self.error = False, "no_connection"
-                if was_online or self.status:
-                    self.status = {}
+                self.conn = None
+                self.online, self.status, self.error = False, None, "no_connection"
                 self.notify()
                 await asyncio.sleep(5)
 
-    async def poll(self, h):
+    async def poll(self):
+        d = self.conn
         async with self.lock:
-            if not self.cfg.get("password"):
-                await h.request({"cmd": "VERSION_CHECK"})  # keeps checking it is online
-                self.status, self.error = {}, "no_password"
-                self.notify()
-                return
-            try:
-                st = await h.status()
-                self.status, self.error = st, None
-            except PrinterError as e:
-                self.status, self.error = {}, e.code or str(e)
+            if self.driver.password and not self.cfg.get("password"):
+                await d.ping()  # keeps checking it is online
+                self.status, self.error = None, "no_password"
+            else:
+                try:
+                    self.status, self.error = await d.status(), None
+                except PrinterError as e:
+                    self.status, self.error = None, e.code or str(e)
         self.notify()
 
-    async def command(self, obj):
-        h = self.halot
-        if not h:
+    def connected(self):
+        if not self.conn:
             raise PrinterError("The printer is offline.", "offline")
+        return self.conn
+
+    async def command(self, action, *args):
+        """Run a driver command (start, pause, resume, stop) and refresh the status."""
+        d = self.connected()
         async with self.lock:
-            obj = {**obj, "token": h.tok()}
-            return await h.request(obj)
+            d.need_password()
+            r = await getattr(d, action)(*args)
+        await self.poll()
+        return r
 
     async def send(self, path: Path, start=False):
-        h = self.halot
-        if not h:
-            raise PrinterError("The printer is offline.", "offline")
-        st = self.status.get("printStatus", "")
-        if st not in IDLE_STATES:
+        d = self.connected()
+        if path.suffix.lower() not in self.driver.extensions:
+            raise PrinterError(f"{self.driver.name} printers do not accept {path.suffix} files.",
+                               "file_not_supported", printer=self.driver.name, ext=path.suffix)
+        if self.status and not self.status.ready:
+            st = self.status.code or self.status.state
             raise PrinterError(f"The printer is busy ({st}).", "printer_busy", state=st)
         loop = asyncio.get_running_loop()
 
@@ -152,17 +159,15 @@ class Printer:
             loop.call_soon(self.notify)
 
         async with self.lock:
-            h.tok()  # fail early without a password
+            d.need_password()
             progress(0)
             try:
-                r = await h.upload(path, on_progress=progress)
+                result = dict(await d.upload(path, on_progress=progress))
             finally:
                 self.upload = None
                 self.notify()
-            result = {"checkstate": r.get("checkstate")}
             if start:
-                result["start"] = await h.request(
-                    {"cmd": "START_PRINT", "filename": path.name, "token": h.tok()})
+                result["start"] = await d.start(path.name)
         return result
 
     async def close(self):
@@ -171,25 +176,6 @@ class Printer:
             await self.task
         except (asyncio.CancelledError, Exception):
             pass
-
-
-async def probe(host, timeout=1.5):
-    try:
-        async with websockets.connect(f"ws://{host}:{PORT}", open_timeout=timeout) as ws:
-            await ws.send(json.dumps({"cmd": "VERSION_CHECK"}))
-            msg = await asyncio.wait_for(ws.recv(), timeout)
-            return json.loads(msg).get("version") is not None
-    except Exception:
-        return False
-
-
-async def port_open(host, timeout=0.6):
-    try:
-        _, w = await asyncio.wait_for(asyncio.open_connection(host, PORT), timeout)
-        w.close()
-        return True
-    except Exception:
-        return False
 
 
 def local_networks():
@@ -201,7 +187,7 @@ def local_networks():
 
 @lru_cache(maxsize=32)
 def _load(path, mtime):
-    return cxdlp.load(path)
+    return formats.load(path)
 
 
 def load_file(path: Path):
@@ -610,19 +596,25 @@ async def printers_list(request):
 
 
 def clean_printer(body, old=None):
-    name = str(body.get("name") or (old or {}).get("name") or "HALOT").strip()[:40]
+    old = old or {}
+    driver = drivers.get(str(body.get("driver") or old.get("driver") or drivers.DEFAULT))
+    name = str(body.get("name") or old.get("name") or driver.name).strip()[:40]
     host = str(body.get("host") or "").strip()
     if not host:
         raise PrinterError("Enter the printer IP address.", "no_host")
-    cfg = {"id": (old or {}).get("id") or uuid.uuid4().hex[:8], "name": name, "host": host,
-           "password": (old or {}).get("password", "")}
+    cfg = {"id": old.get("id") or uuid.uuid4().hex[:8], "name": name, "driver": driver.id, "host": host,
+           "password": old.get("password", "")}
     if body.get("password") is not None and body["password"] != "":
-        if len(body["password"]) > 8:
-            raise PrinterError("The password has at most 8 characters.", "password_length")
-        cfg["password"] = body["password"]
+        driver.check_password(str(body["password"]))
+        cfg["password"] = str(body["password"])
     if body.get("clearPassword"):
         cfg["password"] = ""
     return cfg
+
+
+@routes.get("/api/drivers")
+async def drivers_list(request):
+    return web.json_response([d.describe() for d in drivers.DRIVERS.values()])
 
 
 @routes.post("/api/printers")
@@ -675,13 +667,14 @@ async def printer_scan(request):
     hosts = [str(h) for net in local_networks() for h in net.hosts()]
     sem = asyncio.Semaphore(128)
 
-    async def check(h):
+    async def check(driver, host):
         async with sem:
-            return h if await port_open(h) else None
+            return (driver, host) if await driver.probe(host) else None
 
-    open_hosts = [h for h in await asyncio.gather(*map(check, hosts)) if h]
-    found = [h for h in open_hosts if await probe(h)]
-    return web.json_response([{"host": h, "known": h in known} for h in found])
+    jobs = [check(d, h) for d in drivers.DRIVERS.values() for h in hosts]
+    found = [r for r in await asyncio.gather(*jobs) if r]
+    return web.json_response([{"host": h, "driver": d.id, "driverName": d.name, "known": h in known}
+                              for d, h in found])
 
 
 @routes.post("/api/printers/{id}/send")
@@ -694,7 +687,7 @@ async def printer_send(request):
     return web.json_response(await p.send(path, start=bool(body.get("print"))))
 
 
-@routes.post("/api/printers/{id}/{action:print|pause|stop}")
+@routes.post("/api/printers/{id}/{action:print|pause|resume|stop}")
 @json_error
 async def printer_action(request):
     p = app_of(request).printer(request)
@@ -703,13 +696,9 @@ async def printer_action(request):
         filename = str((await read_json(request)).get("filename") or "")
         if not filename:
             raise PrinterError("Invalid request.", "bad_request")
-        r = await p.command({"cmd": "START_PRINT", "filename": filename})
-    elif action == "pause":
-        r = await p.command({"cmd": "PRINT_PAUSE"})
+        r = await p.command("start", filename)
     else:
-        r = await p.command({"cmd": "PRINT_STOP"})
-    if p.halot:
-        await p.poll(p.halot)
+        r = await p.command(action)
     return web.json_response(r)
 
 
@@ -724,7 +713,7 @@ async def library(request):
         if not d.is_dir():
             continue
         for f in d.iterdir():
-            if f.suffix.lower() in EXTENSIONS and f.is_file():
+            if formats.supported(f) and f.is_file():
                 st = f.stat()
                 files.append({"path": str(f), "name": f.name, "folder": folder,
                               "size": st.st_size, "mtime": st.st_mtime})
@@ -762,7 +751,7 @@ async def library_upload(request):
     saved = []
     while (part := await reader.next()) is not None:
         name = Path(part.filename or "").name
-        if not name.lower().endswith(EXTENSIONS):
+        if not formats.supported(name):
             raise PrinterError(f"Only .cxdlpv4 files: {name}", "only_cxdlp", name=name)
         dest = dest_dir / name
         tmp = dest.with_suffix(dest.suffix + ".part")
@@ -798,7 +787,7 @@ async def file_preview(request):
     if not c.previews:
         raise web.HTTPNotFound()
     index = -1 if request.query.get("size") != "small" else 0
-    png = await asyncio.to_thread(lambda: cxdlp.png_bytes(c.preview_rgb(index)))
+    png = await asyncio.to_thread(lambda: formats.png_bytes(c.preview_rgb(index)))
     return web.Response(body=png, content_type="image/png",
                         headers={"Cache-Control": "max-age=3600"})
 
@@ -815,7 +804,7 @@ async def file_layer(request):
         n = -1
     if not 0 <= n < len(c.layers):
         raise web.HTTPBadRequest(text="invalid layer")
-    png = await asyncio.to_thread(lambda: cxdlp.png_bytes(c.layer_image(n)))
+    png = await asyncio.to_thread(lambda: formats.png_bytes(c.layer_image(n)))
     return web.Response(body=png, content_type="image/png",
                         headers={"Cache-Control": "max-age=3600"})
 

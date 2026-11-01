@@ -23,14 +23,77 @@ the printer to answer.
 
 ## Adding a printer brand
 
-Printer support lives in driver modules; `halot.py` is the first one. A new brand needs:
+Each printer family is a **driver**: one Python module in `drivers/`. The web server, the
+interface and the command line only talk to the driver contract in
+[`drivers/base.py`](drivers/base.py), so a new brand does not touch any other file.
+[`drivers/halot.py`](drivers/halot.py) is a complete example.
 
-- a driver with the same operations: connect, status, upload, start, pause, stop;
-- if it uses another file format, a reader like `cxdlp.py` for the thumbnail, layers and 3D
-  preview.
+### 1. Write the driver
 
-The server and the interface still assume the HALOT driver in a few places, so open an issue
-first and we can work out the shape together.
+Create `drivers/<brand>.py` with a subclass of `Driver`:
+
+```python
+from drivers import base
+from drivers.base import Driver, PrinterError, Status, tcp_open
+
+
+class MyBrandDriver(Driver):
+    id = "mybrand"                  # stored in settings.json, never change it later
+    name = "MyBrand"                # shown in the interface
+    models = "Model X (tested)"
+    extensions = (".goo",)          # files the printer accepts
+    password = False                # True if status and commands need the printer password
+    password_max = 0                # longest password the printer accepts (0: no limit)
+
+    async def connect(self):        # open the connection; set self.version if you can
+    async def close(self):
+    async def ping(self):           # cheap "still there?" check, without a password
+    async def status(self):         # -> Status(state=base.PRINTING, file=..., layer=..., layers=..., remaining=...)
+    async def upload(self, path, on_progress=None):   # call on_progress(percent); return a dict
+    async def start(self, filename):
+    async def pause(self):
+    async def resume(self):
+    async def stop(self):
+
+    @classmethod
+    async def probe(cls, host):     # "is one of my printers at this address?" for Search the network
+```
+
+Rules of the contract:
+
+- **Status:** translate the printer's own state into one of the states in `drivers/base.py`
+  (`idle`, `printing`, `paused`, `finished`…). Put the printer's own name for it in `code` and its
+  full reply in `raw`. Anything you cannot map becomes `UNKNOWN`, and the interface shows `code`.
+- **Errors:** raise `PrinterError(message, code, **params)` for problems the user can fix (wrong
+  password, file refused). Let network errors (`OSError`, `asyncio.TimeoutError`, …) propagate:
+  ResinDeck shows the printer as offline and reconnects. Add every new `code` to `static/i18n.js`
+  as `errors.<code>`, in English and Portuguese.
+- **probe()** runs for every address on the network at once. Keep it under about a second, start
+  with `tcp_open(host, port)` and never send anything that changes the printer.
+- `self.host` is the address and `self.secret` the password the user typed.
+
+### 2. Register it
+
+Add the class to `DRIVERS` in [`drivers/__init__.py`](drivers/__init__.py). It then shows up in
+**+ add**, in **Search the network** and in `resindeck --driver mybrand`.
+
+### 3. Test it without the printer
+
+Write a fake printer that speaks your protocol, like [`tests/fakeprinter.py`](tests/fakeprinter.py)
+does for the HALOT, and test the driver against it, like `tests/test_halot.py`. That way the tests
+run in CI and nobody needs your printer to change the code safely.
+`tests/test_drivers.py::test_every_driver_fills_in_the_contract` checks that every registered
+driver implements every method. Then try it on the real printer and say in the pull request which
+model and firmware you used.
+
+Please also document the protocol, as [docs/PROTOCOL.md](docs/PROTOCOL.md) does for the HALOT.
+
+### Another file format
+
+If the printer uses another sliced format, add a reader in `formats/` with the interface described
+in [`formats/__init__.py`](formats/__init__.py) (header info, thumbnail, layer images, voxels for the
+3D view) and list its extensions in `READERS`. [`formats/cxdlp.py`](formats/cxdlp.py) is the
+reference, and [`tests/cxdlp_writer.py`](tests/cxdlp_writer.py) shows how to build test files.
 
 ## Development
 

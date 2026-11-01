@@ -5,7 +5,7 @@ import zlib
 
 import websockets
 
-from halot import token
+from drivers.halot import token
 
 
 class FakePrinter:

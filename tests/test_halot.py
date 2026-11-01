@@ -4,8 +4,9 @@ import zlib
 
 import pytest
 
-import halot
-from halot import Halot, PrinterError, fmt_status, token
+from drivers import base, halot
+from drivers.base import PrinterError
+from drivers.halot import Halot, HalotDriver, parse_status, token
 
 
 # --- token ---------------------------------------------------------------------------
@@ -159,15 +160,72 @@ def test_qcompress_framing_matches_qt():
     assert zlib.decompress(framed[4:]) == data
 
 
-# --- fmt_status ----------------------------------------------------------------------
+# --- driver ------------------------------------------------------------------------
 
-def test_fmt_status_idle():
-    assert fmt_status({"printStatus": "PRINT_GENERAL"}) == "State:     PRINT_GENERAL"
+@pytest.mark.parametrize("code,state", [
+    ("PRINT_GENERAL", base.IDLE), ("", base.IDLE), ("PRINT_PROCESSING", base.PRINTING),
+    ("PRINT_PAUSE", base.PAUSED), ("PRINT_STOPING", base.STOPPING), ("PRINT_COMPLETE", base.FINISHED),
+    ("PRINT_FAIL", base.FAILED), ("PRINT_SOMETHING_NEW", base.UNKNOWN),
+])
+def test_parse_status_states(code, state):
+    st = parse_status({"printStatus": code})
+    assert st.state == state and st.code == code
 
 
-def test_fmt_status_printing():
-    text = fmt_status({"printStatus": "PRINT_PROCESSING", "filename": "a.cxdlpv4", "sliceLayerCount": "200",
+def test_parse_status_fields():
+    st = parse_status({"printStatus": "PRINT_PROCESSING", "filename": "a.cxdlpv4", "sliceLayerCount": "200",
                        "curSliceLayer": "50", "printRemainTime": "3725"})
-    assert "File:      a.cxdlpv4" in text
-    assert "Layer:     50/200 (25%)" in text
-    assert "Remaining: 1h02min" in text
+    assert (st.file, st.layer, st.layers, st.remaining) == ("a.cxdlpv4", 50, 200, 3725)
+    assert not st.ready
+    assert parse_status({"printStatus": "PRINT_GENERAL", "curSliceLayer": "?"}).layer == 0
+
+
+async def test_driver_session(printer, sliced, small_chunks):
+    async with HalotDriver("127.0.0.1", "secret1") as d:
+        assert d.version == "1"
+        await d.ping()
+        assert (await d.status()).state == base.IDLE
+        assert await d.upload(sliced) == {"checkstate": "1"}
+        await d.start("part.cxdlpv4")
+        assert (await d.status()).state == base.PRINTING
+        await d.pause()
+        assert (await d.status()).state == base.PAUSED
+        await d.resume()
+        await d.stop()
+        assert (await d.status()).state == base.STOPPED
+
+
+async def test_driver_upload_needs_a_password(printer, sliced):
+    async with HalotDriver("127.0.0.1", "") as d:
+        with pytest.raises(PrinterError) as e:
+            await d.upload(sliced)
+    assert e.value.code == "no_password" and printer.files == {}
+
+
+async def test_probe(printer):
+    assert await HalotDriver.probe("127.0.0.1")
+
+
+async def test_probe_without_printer(monkeypatch):
+    monkeypatch.setattr(halot, "PORT", 1)
+    assert not await HalotDriver.probe("127.0.0.1")
+
+
+async def test_probe_something_else_on_the_port(monkeypatch):
+    import asyncio
+
+    async def http(reader, writer):
+        writer.write(b"HTTP/1.1 200 OK\r\n\r\n")
+        writer.close()
+
+    srv = await asyncio.start_server(http, "127.0.0.1", 0)
+    monkeypatch.setattr(halot, "PORT", srv.sockets[0].getsockname()[1])
+    assert not await HalotDriver.probe("127.0.0.1", timeout=0.5)
+    srv.close()
+
+
+def test_check_password():
+    HalotDriver.check_password("12345678")
+    with pytest.raises(PrinterError) as e:
+        HalotDriver.check_password("123456789")
+    assert e.value.params == {"max": 8}

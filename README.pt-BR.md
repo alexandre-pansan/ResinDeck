@@ -120,7 +120,7 @@ Rode como `.venv/bin/python resindeck.py ...`, ou crie um script `resindeck` no 
 | O quê | Onde |
 |---|---|
 | Configurações da interface (impressoras, senhas, pastas) | `~/.config/resindeck/settings.json`, permissão 600, editado pela interface |
-| Impressora da linha de comando | `~/.config/resindeck/config` (veja `config.example`), ou as variáveis `RESINDECK_HOST` / `RESINDECK_PASSWORD` |
+| Impressora da linha de comando | `~/.config/resindeck/config` (veja `config.example`), ou as variáveis `RESINDECK_HOST` / `RESINDECK_PASSWORD` / `RESINDECK_DRIVER` |
 | Cache da visualização 3D | `~/.cache/resindeck/` |
 
 Na primeira execução, a interface importa a impressora da configuração da linha de comando.
@@ -139,6 +139,9 @@ impressora, mas elas dão erro de token, inclusive no HALOT BOX.
 
 ## Como funciona
 
+Cada família de impressora é um driver em `drivers/`, então adicionar uma marca é escrever um único
+módulo. Veja [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand) (em inglês).
+
 O protocolo da HALOT é um WebSocket na porta 18188 com comandos JSON e um token baseado em DES; os envios
 vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 [docs/PROTOCOL.md](docs/PROTOCOL.md) (em inglês).
@@ -146,9 +149,9 @@ vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 | Arquivo | O que faz |
 |---|---|
 | `resindeck.py` | linha de comando e ponto de entrada |
-| `halot.py` | driver das Creality HALOT (protocolo de rede) |
+| `drivers/` | um módulo por família de impressora. `base.py` é o contrato, `halot.py` o driver das Creality HALOT |
+| `formats/` | leitores de arquivos fatiados. `cxdlp.py` lê `.cxdlpv4`: cabeçalho, miniaturas, camadas, voxels do 3D |
 | `server.py` | servidor web local (aiohttp): biblioteca, visualizações, conexões com as impressoras |
-| `cxdlp.py` | leitor de `.cxdlpv4`: cabeçalho, miniaturas, imagens das camadas, voxels para o 3D |
 | `desktop.py` | ponto de entrada do app desktop: servidor em segundo plano e ícone na bandeja |
 | `static/` | interface web (JavaScript puro, three.js no 3D, `i18n.js` com as traduções) |
 | `packaging/` | ícone, receita do PyInstaller e script do AppImage |

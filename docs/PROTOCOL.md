@@ -102,7 +102,7 @@ then waits forever.
 
 ## `.cxdlpv4` files
 
-The parser in `cxdlp.py` follows the layout documented by
+The parser in `formats/cxdlp.py` follows the layout documented by
 [UVtools](https://github.com/sn4k3/UVtools) (`CrealityCXDLPv4File.cs`): a big-endian `CXSW3DV2`
 magic and version, then a little-endian header with resolution, bed size, layer height and
 offsets to two RGB565-RLE previews (120×120 and 300×300), the print parameters and the layer

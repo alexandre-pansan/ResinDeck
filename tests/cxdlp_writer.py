@@ -4,7 +4,7 @@ import zlib
 
 import numpy as np
 
-from cxdlp import HEADER_TAIL, LAYER_DEF, LAYER_DEF_EX_SIZE, PREVIEW, PRINT_PARAMS
+from formats.cxdlp import HEADER_TAIL, LAYER_DEF, LAYER_DEF_EX_SIZE, PREVIEW, PRINT_PARAMS
 
 MAGIC = b"CXSW3DV2\0"
 

@@ -406,7 +406,8 @@ async def add_printer(client, password="secret1"):
 async def test_printer_crud_and_status(client, printer):
     pid, p = await add_printer(client)
     [public] = await (await client.get("/api/printers")).json()
-    assert public["online"] and public["hasPassword"] and public["status"]["printStatus"] == "PRINT_GENERAL"
+    assert public["online"] and public["hasPassword"] and public["status"]["state"] == "idle"
+    assert public["driver"] == "halot" and public["driverName"] == "Creality HALOT"
     assert "password" not in json.dumps(public).replace("hasPassword", "")
 
     r = await client.put(f"/api/printers/{pid}", json={"name": "Renamed", "host": "127.0.0.1"})
@@ -444,7 +445,7 @@ async def test_printer_offline(client):
 
 
 async def test_send_and_print(client, printer, sliced, monkeypatch):
-    import halot
+    from drivers import halot
 
     monkeypatch.setattr(halot, "CHUNK", 1024)
     pid, p = await add_printer(client)
@@ -455,7 +456,7 @@ async def test_send_and_print(client, printer, sliced, monkeypatch):
     assert printer.files["part.cxdlpv4"] == sliced.read_bytes()
     assert printer.status["printStatus"] == "PRINT_PROCESSING"
 
-    await wait_for(lambda: p.status.get("printStatus") == "PRINT_PROCESSING")
+    await wait_for(lambda: p.status and p.status.state == "printing")
     r = await client.post(f"/api/printers/{pid}/send", json={"path": str(sliced)})
     assert (await r.json())["code"] == "printer_busy"
 
@@ -469,11 +470,12 @@ async def test_send_outside_the_library(client, printer, tmp_path):
 async def test_print_pause_stop(client, printer):
     pid, p = await add_printer(client)
     r = await client.post(f"/api/printers/{pid}/print", json={"filename": "part.cxdlpv4"})
-    assert r.status == 200 and p.status["printStatus"] == "PRINT_PROCESSING"
+    assert r.status == 200 and p.status.state == "printing"
     await client.post(f"/api/printers/{pid}/pause")
-    assert p.status["printStatus"] == "PRINT_PAUSE"
+    assert p.status.state == "paused"
+    await client.post(f"/api/printers/{pid}/resume")
     await client.post(f"/api/printers/{pid}/stop")
-    assert p.status["printStatus"] == "PRINT_STOP"
+    assert p.status.state == "stopped"
     r = await client.post(f"/api/printers/{pid}/print", json={})
     assert (await r.json())["code"] == "bad_request"
 
@@ -502,10 +504,9 @@ async def test_websocket_pushes_printer_updates(client, printer):
 async def test_scan_finds_the_printer(client, printer, monkeypatch):
     import ipaddress
 
-    monkeypatch.setattr(server, "PORT", printer.port)
     monkeypatch.setattr(server, "local_networks", lambda: [ipaddress.ip_network("127.0.0.0/30")])
     found = await (await client.post("/api/printers/scan")).json()
-    assert {"host": "127.0.0.1", "known": False} in found
+    assert {"host": "127.0.0.1", "driver": "halot", "driverName": "Creality HALOT", "known": False} in found
 
 
 def test_local_networks(monkeypatch):

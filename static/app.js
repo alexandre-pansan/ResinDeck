@@ -83,34 +83,25 @@ function confirmDialog(title, text, okLabel = t("dialog.confirm"), danger = fals
 
 // --- printers -------------------------------------------------------------------
 
-// printStatus values seen in HALOT BOX and HalotMageProSharp -> dot style
+// printer states (drivers/base.py) -> dot style
 const STATUS_CLASS = {
-  PRINT_GENERAL: "online",
-  PRINT_PROCESSING: "busy",
-  PRINT_PROGRESS: "busy",
-  PRINT_PRINTING: "busy",
-  PRINT_PAUSE: "paused",
-  PRINT_PAUSING: "paused",
-  PRINT_STOP: "online",
-  PRINT_STOPING: "paused",
-  PRINT_STOPPING: "paused",
-  PRINT_COMPLETING: "busy",
-  PRINT_COMPLETE: "online",
-  PRINT_END: "online",
-  PRINT_FAIL: "offline",
+  idle: "online", printing: "busy", pausing: "paused", paused: "paused", stopping: "paused",
+  stopped: "online", finishing: "busy", finished: "online", failed: "offline", unknown: "online",
 };
-const IDLE = new Set(["", "PRINT_GENERAL", "PRINT_COMPLETE", "PRINT_END", "PRINT_STOP", "PRINT_FAIL"]);
+const READY = new Set(["idle", "stopped", "finished", "failed"]);  // a new file can be sent
+
+const isReady = (p) => !p.status || READY.has(p.status.state);
 
 function printerView(p) {
-  const st = p.status?.printStatus || "";
+  const st = p.status?.state || "";
   let label = !st ? t("status.online")
-    : has(`status.${st}`) ? t(`status.${st}`) : st.replace(/^PRINT_/, "").toLowerCase();
+    : st === "unknown" || !has(`status.${st}`) ? p.status.code || st : t(`status.${st}`);
   let cls = STATUS_CLASS[st] || "online";
   if (!p.online) [label, cls] = [t("status.offline"), "offline"];
-  const total = +p.status?.sliceLayerCount || 0;
-  const cur = +p.status?.curSliceLayer || 0;
-  const active = p.online && !IDLE.has(st) && total > 0;
-  const paused = st.includes("PAUSE");
+  const total = p.status?.layers || 0;
+  const cur = p.status?.layer || 0;
+  const active = p.online && !isReady(p) && total > 0;
+  const paused = st === "paused" || st === "pausing";
   return { label, cls, total, cur, active, paused, st };
 }
 
@@ -122,14 +113,14 @@ function renderPrinters() {
   }
   for (const p of state.printers) {
     const v = printerView(p);
-    const fname = p.status?.filename;
+    const fname = p.status?.file;
     const local = fname && state.files.find((f) => f.name === fname);
-    const rem = +p.status?.printRemainTime || 0;
+    const rem = p.status?.remaining || 0;
     const card = el("div", { class: "printer" },
       el("div", { class: "printer-top" },
         el("span", { class: `dot ${v.cls}` }),
         el("span", { class: "printer-name" }, p.name),
-        el("span", { class: "printer-host" }, p.host)),
+        el("span", { class: "printer-host", title: p.driverName }, p.host)),
       el("div", { class: "printer-state" }, v.label, p.version ? el("span", { class: "muted small" }, `  · fw ${p.version}`) : null),
       fname ? el("div", { class: "printer-file", title: fname },
         local ? el("a", { onclick: () => openFile(local, p.id) }, fname) : fname) : null,
@@ -173,11 +164,12 @@ function renderTargets() {
 
 function updateSendButtons() {
   const p = state.printers.find((x) => x.id === $("#target").value);
-  const ok = p && p.online && p.hasPassword && !p.upload && IDLE.has(p.status?.printStatus || "");
-  $("#send").disabled = $("#send-print").disabled = !ok || !state.file;
+  const ext = state.file ? state.file.name.slice(state.file.name.lastIndexOf(".")).toLowerCase() : "";
+  const accepts = !p || !ext || p.extensions.includes(ext);
   const why = !p ? t("send.whyNoPrinter") : !p.online ? t("send.whyOffline")
-    : !p.hasPassword ? t("send.whyPassword") : p.upload ? t("send.whyUploading")
-    : !IDLE.has(p.status?.printStatus || "") ? t("send.whyBusy") : "";
+    : p.needsPassword && !p.hasPassword ? t("send.whyPassword") : p.upload ? t("send.whyUploading")
+    : !isReady(p) ? t("send.whyBusy") : !accepts ? t("send.whyFormat", { printer: p.driverName }) : "";
+  $("#send").disabled = $("#send-print").disabled = !!why || !state.file;
   $("#send").title = $("#send-print").title = why;
 }
 
@@ -186,7 +178,8 @@ async function printerAction(p, action) {
   if (action === "stop" && !(await confirmDialog(t("stop.title"),
     t("stop.text", { file: p.status?.filename || "", printer: p.name }), t("printers.stop"), true))) return;
   try {
-    await api(`/api/printers/${p.id}/${action}`, { method: "POST" });
+    const command = action === "pause" && v.paused ? "resume" : action;
+    await api(`/api/printers/${p.id}/${command}`, { method: "POST" });
     toast(action === "stop" ? t("stop.done") : v.paused ? t("pause.resuming") : t("pause.pausing"), "ok");
   } catch (e) {
     toast(errText(e), "error");
@@ -194,10 +187,26 @@ async function printerAction(p, action) {
 }
 
 let editing = null;
-function openPrinterDialog(p = null) {
+let driverList = [];
+
+// the fields depend on the printer type: password or not, its maximum length
+function applyDriver() {
+  const f = $("#printer-form");
+  const d = driverList.find((x) => x.id === f.driver.value) || driverList[0];
+  if (!d) return;
+  f.password.closest("label").hidden = !d.password;
+  f.password.maxLength = d.passwordMax || 524288;
+  $("#driver-models").textContent = d.models;
+}
+
+async function openPrinterDialog(p = null) {
   editing = p;
   const f = $("#printer-form");
   f.reset();
+  if (!driverList.length) driverList = await api("/api/drivers").catch(() => []);
+  f.driver.replaceChildren(...driverList.map((d) => el("option", { value: d.id }, d.name)));
+  f.driver.value = p?.driver || driverList[0]?.id || "";
+  applyDriver();
   $("#printer-dialog-title").textContent = p ? t("printerDialog.edit") : t("printerDialog.add");
   f.name.value = p?.name || "";
   f.host.value = p?.host || "";
@@ -209,11 +218,12 @@ function openPrinterDialog(p = null) {
 }
 
 $("#add-printer").onclick = () => openPrinterDialog();
+$("#printer-form").driver.onchange = applyDriver;
 $("#printer-save").onclick = async (ev) => {
   ev.preventDefault();
   const f = $("#printer-form");
   if (!f.reportValidity()) return;
-  const body = { name: f.name.value, host: f.host.value, password: f.password.value };
+  const body = { name: f.name.value, driver: f.driver.value, host: f.host.value, password: f.password.value };
   try {
     if (editing) await api(`/api/printers/${editing.id}`, { method: "PUT", body });
     else await api("/api/printers", { method: "POST", body });
@@ -237,8 +247,12 @@ $("#scan").onclick = async () => {
   try {
     const found = await api("/api/printers/scan", { method: "POST" });
     out.replaceChildren(...(found.length ? found.map((r) =>
-      el("button", { type: "button", class: "small", onclick: () => { $("#printer-form").host.value = r.host; } },
-        r.host + (r.known ? t("printerDialog.scanKnown") : ""))) : [t("printerDialog.scanNone")]));
+      el("button", { type: "button", class: "small", onclick: () => {
+        const f = $("#printer-form");
+        f.host.value = r.host;
+        f.driver.value = r.driver;
+        applyDriver();
+      } }, `${r.host} · ${r.driverName}` + (r.known ? t("printerDialog.scanKnown") : ""))) : [t("printerDialog.scanNone")]));
   } catch (e) {
     out.replaceChildren(errText(e));
   } finally {
@@ -457,7 +471,7 @@ function updateFollow() {
   const badge = $("#follow-badge");
   const p = state.printers.find((x) => x.id === state.follow);
   const v = p && printerView(p);
-  if (!p || !state.info || p.status?.filename !== state.file?.name || !v.active) {
+  if (!p || !state.info || p.status?.file !== state.file?.name || !v.active) {
     badge.hidden = true;
     return;
   }

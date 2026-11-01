@@ -7,7 +7,7 @@ Usage:
   resindeck print NAME_ON_PRINTER.cxdlpv4
   resindeck pause | stop
   resindeck [ui]           (web interface in the browser)
-Config: ~/.config/resindeck/config  (HOST=..., PASSWORD=...)
+Config: ~/.config/resindeck/config  (HOST=..., PASSWORD=..., DRIVER=halot)
 """
 import argparse
 import asyncio
@@ -22,7 +22,8 @@ import websockets
 __version__ = "0.2.0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # start.sh runs Python with -I
-from halot import Halot, PrinterError, fmt_status  # noqa: E402
+import drivers  # noqa: E402
+from drivers import PrinterError  # noqa: E402
 
 CONFIG_DIR = Path.home() / ".config" / "resindeck"
 CONFIG = CONFIG_DIR / "config"
@@ -43,13 +44,26 @@ def load_config():
                 cfg[k.strip()] = v.strip()
     cfg["HOST"] = os.environ.get("RESINDECK_HOST", cfg.get("HOST", ""))
     cfg["PASSWORD"] = os.environ.get("RESINDECK_PASSWORD", cfg.get("PASSWORD", ""))
+    cfg["DRIVER"] = os.environ.get("RESINDECK_DRIVER", cfg.get("DRIVER", drivers.DEFAULT))
     return cfg
+
+
+def fmt_status(st):
+    lines = [f"State:     {st.state}" + (f" ({st.code})" if st.code else "")]
+    if st.file:
+        lines.append(f"File:      {st.file}")
+    if st.layers:
+        lines.append(f"Layer:     {st.layer}/{st.layers} ({st.layer * 100 // st.layers}%)")
+    if st.remaining:
+        lines.append(f"Remaining: {st.remaining // 3600}h{st.remaining % 3600 // 60:02d}min")
+    return "\n".join(lines)
 
 
 async def main():
     ap = argparse.ArgumentParser(
         prog="resindeck", description="Send files to resin printers over the network and control them.")
     ap.add_argument("--host", help="printer IP (default: from config)")
+    ap.add_argument("--driver", choices=sorted(drivers.DRIVERS), help="printer type (default: from config, or halot)")
     sub = ap.add_subparsers(dest="cmd")
     sub.add_parser("version", help="firmware version (no password needed)")
     sub.add_parser("status", help="print status")
@@ -86,37 +100,40 @@ async def main():
         return ans.strip().lower() in ("y", "yes", "s", "sim")
 
     try:
-        async with Halot(host, cfg["PASSWORD"]) as h:
+        driver = drivers.get(a.driver or cfg["DRIVER"])
+        async with driver(host, cfg["PASSWORD"]) as h:
             if a.cmd == "version":
-                print(await h.request({"cmd": "VERSION_CHECK"}))
+                print(f"{driver.name} at {host}, firmware {h.version or 'unknown'}")
             elif a.cmd == "status":
                 print(fmt_status(await h.status()))
             elif a.cmd == "raw-status":
-                print(json.dumps(await h.status(), indent=2, ensure_ascii=False))
+                print(json.dumps((await h.status()).raw, indent=2, ensure_ascii=False))
             elif a.cmd == "send":
                 if not a.file.is_file():
                     sys.exit(f"File not found: {a.file}")
-                if a.file.suffix.lower() not in (".cxdlpv4", ".cxdlp"):
-                    print("Warning: the HALOT expects a .cxdlpv4 file.", file=sys.stderr)
+                if a.file.suffix.lower() not in driver.extensions:
+                    print(f"Warning: {driver.name} printers expect {', '.join(driver.extensions)} files.",
+                          file=sys.stderr)
                 st = await h.status()  # validates password before uploading
-                if st.get("printStatus") not in (None, "", "PRINT_GENERAL", "PRINT_COMPLETE", "PRINT_STOP"):
-                    print(f"Warning: the printer is in '{st.get('printStatus')}'.", file=sys.stderr)
+                if not st.ready:
+                    print(f"Warning: the printer is {st.state} ({st.code}).", file=sys.stderr)
                 print(f"Uploading {a.file.name} ({a.file.stat().st_size / 1e6:.1f} MB) to {host}...")
                 def progress(pct):
                     print(f"\r  uploading... {pct:3d}%", end="", flush=True)
 
                 r = await h.upload(a.file, on_progress=progress)
                 print()
-                print(f"Upload finished (checkstate={r.get('checkstate')}).")
+                print("Upload finished.", json.dumps(r) if r else "")
                 if a.print and confirm(a.file.name):
-                    print(await h.request({"cmd": "START_PRINT", "filename": a.file.name, "token": h.tok()}))
+                    print(await h.start(a.file.name))
             elif a.cmd == "print":
                 if confirm(a.filename):
-                    print(await h.request({"cmd": "START_PRINT", "filename": a.filename, "token": h.tok()}))
+                    print(await h.start(a.filename))
             elif a.cmd == "pause":
-                print(await h.request({"cmd": "PRINT_PAUSE", "token": h.tok()}))
+                st = await h.status()
+                print(await (h.resume() if st.state == "paused" else h.pause()))
             elif a.cmd == "stop":
-                print(await h.request({"cmd": "PRINT_STOP", "token": h.tok()}))
+                print(await h.stop())
     except PrinterError as e:
         sys.exit(str(e))
     except (OSError, asyncio.TimeoutError, websockets.WebSocketException) as e:
