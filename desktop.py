@@ -50,17 +50,20 @@ def redirect_output():
 def main():
     redirect_output()
     if already_running():
-        webbrowser.open(URL)
+        webbrowser.open(asyncio.run(server.browser_url(PORT)))
         return
 
     loop = asyncio.new_event_loop()
     task = loop.create_task(server.run(PORT, open_browser=True))
+    tray = []
 
     def serve():
         try:
             loop.run_until_complete(task)
         except asyncio.CancelledError:
             pass
+        for icon in tray:  # quit from the web interface: take the tray icon down too
+            icon.stop()
 
     thread = threading.Thread(target=serve, name="server")
     thread.start()
@@ -73,16 +76,20 @@ def main():
             loop.call_soon_threadsafe(task.cancel)
             icon.stop()
 
+        def open_ui():
+            webbrowser.open(asyncio.run_coroutine_threadsafe(server.browser_url(PORT), loop).result())
+
         text = labels()
         icon = pystray.Icon(
             "ResinDeck",
             Image.open(HERE / "packaging" / "icon.png"),
             "ResinDeck",
             menu=pystray.Menu(
-                pystray.MenuItem(text["open"], lambda: webbrowser.open(URL), default=True),
+                pystray.MenuItem(text["open"], open_ui, default=True),
                 pystray.MenuItem(text["quit"], quit_app),
             ),
         )
+        tray.append(icon)
         icon.run()
     except Exception as e:  # no tray available: keep serving until the process is stopped
         print(f"Tray icon unavailable ({e!r}); ResinDeck keeps running at {URL}", file=sys.stderr)

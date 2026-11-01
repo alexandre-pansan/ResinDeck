@@ -39,11 +39,12 @@ first and we can work out the shape together.
 .venv/bin/python resindeck.py status
 ```
 
-- Python: standard library plus `websockets`, `cryptography`, `aiohttp` and `numpy`. Keep it that way
-  unless there is a good reason.
+- Python: standard library plus `websockets`, `cryptography`, `aiohttp`, `numpy`, `zeroconf`
+  (mDNS) and `segno` (QR code). Keep it that way unless there is a good reason.
 - Web interface: plain JavaScript modules, no build step. Reload the page to see changes; restart
   the server after changing Python code.
-- Keep the server bound to `127.0.0.1`.
+- The server listens on the network: every `/api` route and `/ws` need the PIN session unless
+  the request comes from this computer (see `guard` in `server.py`). Keep new routes under `/api`.
 - Do not commit sliced files, settings or passwords.
 
 ## Desktop packages and releases

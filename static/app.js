@@ -33,6 +33,7 @@ async function api(path, opts = {}) {
   });
   const type = res.headers.get("content-type") || "";
   const data = type.includes("json") ? await res.json() : await res.text();
+  if (res.status === 401 && data?.code === "pin_required") showLogin();
   if (!res.ok) throw new ApiError(data || res.statusText);
   return data;
 }
@@ -337,6 +338,8 @@ async function openFile(f, follow = null) {
   $("#file-meta").textContent = `${fmtSize(f.size)} · ${f.folder}`;
   $("#stats").replaceChildren();
   $("#thumb-img").src = `/api/file/preview?${q(f.path)}&t=${f.mtime}`;
+  // on a phone the viewer sits below the printers and the library
+  if (matchMedia("(max-width: 820px)").matches) $("#viewer").scrollIntoView({ behavior: "smooth" });
   renderLibrary();
   updateSendButtons();
   try {
@@ -500,33 +503,126 @@ function initLanguage() {
   setLang(lang);
 }
 
+// --- access from the phone ------------------------------------------------------
+
+async function openRemoteDialog() {
+  const r = await api("/api/remote").catch((e) => (toast(errText(e), "error"), null));
+  if (!r) return;
+  $("#remote-on").hidden = !r.enabled;
+  $("#remote-off").hidden = r.enabled;
+  if (r.enabled) {
+    if (!$("#remote-dialog").open) $("#remote-qr").src = `/api/remote/qr.svg?t=${Date.now()}`;
+    $("#remote-urls").replaceChildren(...r.urls.map((u) => el("a", { href: u, target: "_blank" }, u)));
+    $("#remote-pin").textContent = r.pin;
+    renderDevices(r.devices);
+  }
+  if (!$("#remote-dialog").open) $("#remote-dialog").showModal();
+}
+
+function renderDevices(devices) {
+  const box = $("#remote-devices");
+  if (!devices.length) {
+    box.replaceChildren(el("div", { class: "empty-note" }, t("remote.noDevices")));
+    return;
+  }
+  box.replaceChildren(...devices.map((d) => el("div", { class: "device" },
+    el("span", { class: `dot ${d.online ? "online" : ""}` }),
+    el("div", { class: "device-info" },
+      el("div", {}, d.name),
+      el("div", { class: "device-sub" }, [d.ip,
+        d.online ? t("remote.online") : d.seen ? t("remote.seen", { date: fmtDate(d.seen) })
+          : t("remote.since", { date: fmtDate(d.created) })].join(" · "))),
+    el("button", { type: "button", class: "ghost small danger", onclick: async () => {
+      try {
+        await api(`/api/remote/devices/${d.id}`, { method: "DELETE" });
+        toast(t("remote.disconnected", { name: d.name }), "ok");
+      } catch (e) {
+        toast(errText(e), "error");
+      }
+    } }, t("remote.disconnect")))));
+}
+$("#remote-btn").onclick = openRemoteDialog;
+
+let quitting = false;
+$("#quit-btn").onclick = async () => {
+  if (!(await confirmDialog(t("quit.button"), t("quit.confirm"), t("quit.button"), true))) return;
+  try {
+    await api("/api/quit", { method: "POST" });
+    quitting = true;
+    document.body.replaceChildren(el("div", { class: "login" }, el("p", { class: "muted" }, t("quit.done"))));
+  } catch (e) {
+    toast(errText(e), "error");
+  }
+};
+$("#remote-new-pin").onclick = async () => {
+  try {
+    const r = await api("/api/remote/pin", { method: "POST" });
+    $("#remote-pin").textContent = r.pin;
+    $("#remote-qr").src = `/api/remote/qr.svg?t=${Date.now()}`;
+    renderDevices([]);
+    toast(t("remote.newPinDone"), "ok");
+  } catch (e) {
+    toast(errText(e), "error");
+  }
+};
+
+function showLogin() {
+  if (!$("#login").hidden) return;
+  $("#login").hidden = false;
+  $("#login-form").pin.focus();
+}
+
+async function login(pin) {
+  try {
+    await api("/api/login", { method: "POST", body: { pin } });
+    location.reload();
+  } catch (e) {
+    $("#login-error").textContent = errText(e);
+  }
+}
+$("#login-form").addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  login(ev.target.pin.value.trim());
+});
+
 // --- live updates ---------------------------------------------------------------
 
 function connect() {
-  const ws = new WebSocket(`ws://${location.host}/ws`);
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
   ws.onopen = () => $("#conn").classList.add("on");
   ws.onclose = () => {
     $("#conn").classList.remove("on");
-    setTimeout(connect, 2000);
+    if (quitting || !$("#login").hidden) return;
+    // a phone that was disconnected from the computer goes back to the PIN screen
+    setTimeout(() => api("/api/session")
+      .then((s) => (s.authorized ? connect() : showLogin()))
+      .catch(() => setTimeout(connect, 2000)), 1000);
   };
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === "printers") {
       state.printers = msg.printers;
       renderPrinters();
+    } else if (msg.type === "devices" && $("#remote-dialog").open) {
+      openRemoteDialog();
     } else if (msg.type === "voxels" && msg.path === state.file?.path) {
       $("#vox-status").textContent = t("viewer.building3dPct", { pct: Math.round(msg.pct * 100) });
     }
   };
 }
 
-initLanguage();
-applyStatic();
-connect();
-loadLibrary()
-  .then(() => {
-    const path = new URLSearchParams(location.hash.slice(1)).get("file");
-    const f = path && state.files.find((x) => x.path === path || x.name === path);
-    if (f) openFile(f);
-  })
-  .catch((e) => toast(errText(e), "error"));
+async function start() {
+  initLanguage();
+  applyStatic();
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const session = await api("/api/session");
+  if (!session.authorized) return showLogin();
+  $("#remote-btn").hidden = $("#quit-btn").hidden = !session.local;
+  connect();
+  await loadLibrary();
+  const path = hash.get("file");
+  const f = path && state.files.find((x) => x.path === path || x.name === path);
+  if (f) openFile(f);
+}
+
+start().catch((e) => toast(errText(e), "error"));
