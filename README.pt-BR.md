@@ -4,7 +4,8 @@ Um painel de controle open source para impressoras 3D de resina: veja seus arqui
 3D, envie para a impressora pela rede e acompanhe a impressão, do seu próprio computador.
 
 Hoje suporta impressoras **Creality HALOT**, direto do Linux, sem HALOT BOX e sem Wine nem Proton.
-A ideia é crescer para outras marcas e sistemas com a ajuda da comunidade.
+A ideia é centralizar num só lugar a comunicação em rede com impressoras 3D de resina, crescendo
+para outras marcas e sistemas com a ajuda da comunidade.
 
 [Read in English](README.md)
 

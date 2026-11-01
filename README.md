@@ -4,7 +4,8 @@ An open source control deck for resin 3D printers: preview your sliced files in 
 to the printer over the network and follow the print, from your own computer.
 
 Today it supports **Creality HALOT** printers, straight from Linux, with no HALOT BOX and no Wine
-or Proton. The goal is to grow to more printer brands and systems with help from the community.
+or Proton. The goal is to bring network communication with every resin 3D printer together in one
+place, growing to more brands and systems with help from the community.
 
 [Leia em português](README.pt-BR.md)
 
