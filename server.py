@@ -1,12 +1,16 @@
 """ResinDeck web UI: file library, 3D/layer preview and printer manager.
 
-Listens on 127.0.0.1 only. Started with `resindeck ui`.
+Started with `resindeck ui`. Listens on the local network so a phone can follow the print:
+this computer has full access, other devices need the PIN shown in the interface. Set
+RESINDECK_LAN=0 to listen on 127.0.0.1 only.
 """
 import asyncio
 import hashlib
+import io
 import ipaddress
 import json
 import os
+import secrets
 import socket
 import struct
 import time
@@ -14,12 +18,14 @@ import uuid
 import webbrowser
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import numpy as np
 import websockets
 from aiohttp import WSMsgType, web
 
 import cxdlp
+import lan
 from halot import PORT, Halot, PrinterError
 from resindeck import CONFIG, load_config
 
@@ -29,19 +35,29 @@ STATIC = Path(__file__).parent / "static"
 EXTENSIONS = (".cxdlpv4", ".cxdlp")
 POLL_INTERVAL = 3
 IDLE_STATES = ("", "PRINT_GENERAL", "PRINT_COMPLETE", "PRINT_STOP")
+LAN = os.environ.get("RESINDECK_LAN", "1") != "0"
+SESSION_COOKIE = "resindeck_session"
 
 
 # --- settings -----------------------------------------------------------------
 
 def load_settings():
     if SETTINGS.exists():
-        return json.loads(SETTINGS.read_text())
-    s = {"printers": [], "folders": []}
-    cfg = load_config()  # migrate the CLI config
-    if cfg["HOST"]:
-        s["printers"].append({"id": uuid.uuid4().hex[:8], "name": "HALOT",
-                              "host": cfg["HOST"], "password": cfg["PASSWORD"]})
+        s = json.loads(SETTINGS.read_text())
+    else:
+        s = {"printers": [], "folders": []}
+        cfg = load_config()  # migrate the CLI config
+        if cfg["HOST"]:
+            s["printers"].append({"id": uuid.uuid4().hex[:8], "name": "HALOT",
+                                  "host": cfg["HOST"], "password": cfg["PASSWORD"]})
+    s.setdefault("pin", new_pin())
+    # devices that entered the PIN: {"id", "hash" (sha256 of the cookie), "name", "ip", "created"}
+    s["sessions"] = [x for x in s.get("sessions", []) if isinstance(x, dict)]
     return s
+
+
+def new_pin():
+    return f"{secrets.randbelow(10 ** 6):06d}"
 
 
 def save_settings(s):
@@ -175,15 +191,8 @@ async def port_open(host, timeout=0.6):
 
 
 def local_networks():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("10.255.255.255", 1))
-        ip = s.getsockname()[0]
-    except OSError:
-        return []
-    finally:
-        s.close()
-    return [ipaddress.ip_network(f"{ip}/24", strict=False)]
+    ip = lan.local_ip()
+    return [ipaddress.ip_network(f"{ip}/24", strict=False)] if ip else []
 
 
 # --- files ----------------------------------------------------------------------
@@ -223,6 +232,11 @@ class App:
         self.clients = set()
         self.voxel_jobs = {}
         self._notify_pending = False
+        self.port = None
+        self.mdns = False
+        self.login_failures = {}  # ip -> (count, blocked until)
+        self.seen = {}  # device id -> last request time (wall clock)
+        self.quit = asyncio.Event()
 
     async def start(self):
         save_settings(self.settings)
@@ -243,10 +257,26 @@ class App:
         self._notify_pending = False
         self.broadcast({"type": "printers", "printers": self.printer_list()})
 
-    def broadcast(self, msg):
+    def broadcast(self, msg, local_only=False):
         data = json.dumps(msg)
         for ws in list(self.clients):
-            asyncio.create_task(self._send(ws, data))
+            if not local_only or ws.local:
+                asyncio.create_task(self._send(ws, data))
+
+    async def drop_device(self, dev_id):
+        """Close the live connections of a device (of every device when dev_id is None)."""
+        for ws in [w for w in self.clients if w.device and dev_id in (None, w.device)]:
+            await ws.close()
+        self.devices_changed()
+
+    def devices_changed(self):
+        self.broadcast({"type": "devices"}, local_only=True)
+
+    def device_list(self):
+        online = {ws.device for ws in self.clients if ws.device}
+        return [{"id": d["id"], "name": d["name"], "ip": d["ip"], "created": d["created"],
+                 "seen": self.seen.get(d["id"]), "online": d["id"] in online}
+                for d in reversed(self.settings["sessions"])]
 
     async def _send(self, ws, data):
         try:
@@ -290,6 +320,102 @@ def json_error(fn):
     return wrapper
 
 
+# --- access from other devices ---------------------------------------------------
+
+_own = {}  # ip -> (is one of this machine's addresses, checked at)
+
+
+def own_address(ip):
+    """True when the address belongs to this machine: only local addresses can be bound."""
+    hit = _own.get(ip)
+    if hit and time.monotonic() - hit[1] < 60:
+        return hit[0]
+    try:
+        with socket.socket(socket.AF_INET6 if ":" in ip else socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.bind((ip, 0))
+        ok = True
+    except OSError:
+        ok = False
+    _own[ip] = (ok, time.monotonic())
+    return ok
+
+
+def is_local(request):
+    """Requests from this computer, also through resindeck.local or its own LAN address."""
+    try:
+        ip = ipaddress.ip_address(request.remote or "")
+    except ValueError:
+        return False
+    return ip.is_loopback or own_address(str(ip))
+
+
+def trusted_host(host):
+    """Block DNS rebinding: a page on another site must not reach the API through its own name."""
+    name = urlsplit(f"//{host}").hostname or ""
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        return name in ("localhost", socket.gethostname().lower()) or name.endswith(".local")
+
+
+def session_hash(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def device_of(request):
+    """The paired device making the request, or None."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    h = session_hash(token)
+    return next((d for d in app_of(request).settings["sessions"] if d["hash"] == h), None)
+
+
+def authorized(request):
+    if is_local(request):
+        return True
+    device = device_of(request)
+    if device:
+        app_of(request).seen[device["id"]] = time.time()
+    return device is not None
+
+
+def device_name(ua):
+    """A readable name from the User-Agent, like "Android phone · Chrome"."""
+    os_name = next((n for key, n in (("iPhone", "iPhone"), ("iPad", "iPad"), ("Android", "Android"),
+                                      ("Windows", "Windows"), ("Mac OS", "Mac"), ("CrOS", "ChromeOS"),
+                                      ("Linux", "Linux")) if key in ua), "")
+    if os_name == "Android":
+        os_name += " phone" if "Mobile" in ua else " tablet"
+    browser = next((n for key, n in (("EdgA", "Edge"), ("Edg/", "Edge"), ("SamsungBrowser", "Samsung"),
+                                      ("Firefox", "Firefox"), ("FxiOS", "Firefox"), ("CriOS", "Chrome"),
+                                      ("Chrome", "Chrome"), ("Safari", "Safari")) if key in ua), "")
+    return " · ".join(x for x in (os_name, browser) if x) or "Unknown device"
+
+
+OPEN_PATHS = ("/api/session", "/api/login")
+
+
+@web.middleware
+async def guard(request, handler):
+    if is_local(request) and not trusted_host(request.host):
+        raise web.HTTPForbidden(text="unexpected Host header")
+    origin = request.headers.get("Origin")
+    if request.method not in ("GET", "HEAD") and origin and urlsplit(origin).netloc != request.host:
+        raise web.HTTPForbidden(text="cross-origin request")
+    protected = request.path.startswith("/api/") or request.path == "/ws"
+    if protected and request.path not in OPEN_PATHS and not authorized(request):
+        return web.json_response({"error": "Enter the PIN shown on the computer.",
+                                  "code": "pin_required", "params": {}}, status=401)
+    return await handler(request)
+
+
+def local_only(request):
+    if not is_local(request):
+        raise web.HTTPForbidden(text="only from the computer running ResinDeck")
+
+
 routes = web.RouteTableDef()
 
 
@@ -307,7 +433,11 @@ async def ws_handler(request):
     app = app_of(request)
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
+    ws.local = is_local(request)
+    ws.device = None if ws.local else device_of(request)["id"]
     app.clients.add(ws)
+    if ws.device:
+        app.devices_changed()
     await ws.send_json({"type": "printers", "printers": app.printer_list()})
     try:
         async for msg in ws:
@@ -315,7 +445,110 @@ async def ws_handler(request):
                 break
     finally:
         app.clients.discard(ws)
+        if ws.device:
+            app.devices_changed()
     return ws
+
+
+# session
+
+@routes.get("/api/session")
+async def session(request):
+    return web.json_response({"local": is_local(request), "authorized": authorized(request)})
+
+
+@routes.post("/api/login")
+@json_error
+async def login(request):
+    app = app_of(request)
+    ip = request.remote or ""
+    count, until = app.login_failures.get(ip, (0, 0))
+    if time.monotonic() < until:
+        raise PrinterError("Too many attempts. Wait a minute.", "pin_wait")
+    pin = str((await request.json()).get("pin") or "").strip()
+    if not secrets.compare_digest(pin, app.settings["pin"]):
+        count += 1
+        app.login_failures[ip] = (count, time.monotonic() + 60 if count >= 5 else 0)
+        raise PrinterError("Wrong PIN.", "pin_wrong")
+    app.login_failures.pop(ip, None)
+    token = secrets.token_urlsafe(32)
+    device = {"id": uuid.uuid4().hex[:8], "hash": session_hash(token),
+              "name": device_name(request.headers.get("User-Agent", "")), "ip": ip,
+              "created": time.time()}
+    app.settings["sessions"] = app.settings["sessions"][-49:] + [device]
+    save_settings(app.settings)
+    app.devices_changed()
+    res = web.json_response({"ok": True})
+    res.set_cookie(SESSION_COOKIE, token, max_age=365 * 86400, httponly=True, samesite="Strict")
+    return res
+
+
+def remote_urls(app):
+    ip = lan.local_ip() if LAN else None
+    urls = []
+    if ip and app.mdns:
+        urls.append(f"http://{lan.MDNS_NAME}:{app.port}/")
+    if ip:
+        urls.append(f"http://{ip}:{app.port}/")
+    return ip, urls
+
+
+@routes.get("/api/remote")
+async def remote_info(request):
+    local_only(request)
+    app = app_of(request)
+    ip, urls = remote_urls(app)
+    return web.json_response({"enabled": bool(ip), "urls": urls, "pin": app.settings["pin"],
+                              "devices": app.device_list()})
+
+
+@routes.delete("/api/remote/devices/{id}")
+async def remote_device_delete(request):
+    """Disconnect one device: it has to enter the PIN again."""
+    local_only(request)
+    app = app_of(request)
+    dev_id = request.match_info["id"]
+    app.settings["sessions"] = [d for d in app.settings["sessions"] if d["id"] != dev_id]
+    save_settings(app.settings)
+    app.seen.pop(dev_id, None)
+    await app.drop_device(dev_id)
+    return web.json_response({"ok": True})
+
+
+@routes.get("/api/remote/qr.svg")
+async def remote_qr(request):
+    local_only(request)
+    import segno
+    app = app_of(request)
+    _, urls = remote_urls(app)
+    if not urls:
+        raise web.HTTPNotFound()
+    url = urls[0]  # resindeck.local, or the IP when mDNS is not available; the PIN is typed
+    buf = io.BytesIO()
+    segno.make(url, error="m").save(buf, kind="svg", scale=6, border=2, dark="#000", light="#fff")
+    return web.Response(body=buf.getvalue(), content_type="image/svg+xml",
+                        headers={"Cache-Control": "no-store"})
+
+
+@routes.post("/api/remote/pin")
+async def remote_new_pin(request):
+    """New PIN and sign out every other device."""
+    local_only(request)
+    app = app_of(request)
+    app.settings["pin"] = new_pin()
+    app.settings["sessions"] = []
+    save_settings(app.settings)
+    app.seen.clear()
+    await app.drop_device(None)
+    return web.json_response({"pin": app.settings["pin"]})
+
+
+@routes.post("/api/quit")
+async def quit_app(request):
+    """Stop ResinDeck (the tray menu is not available on every desktop)."""
+    local_only(request)
+    asyncio.get_running_loop().call_later(0.2, app_of(request).quit.set)
+    return web.json_response({"ok": True})
 
 
 # printers
@@ -549,7 +782,7 @@ async def file_voxels(request):
 
 def make_app():
     halot = App()
-    app = web.Application(client_max_size=1 << 30)
+    app = web.Application(client_max_size=1 << 30, middlewares=[guard])
     app["halot"] = halot
     app.add_routes(routes)
     app.router.add_static("/static", STATIC)
@@ -565,22 +798,45 @@ def make_app():
     return app
 
 
+async def browser_url(port):
+    """resindeck.local when it resolves to this computer, so the address bar shows the same
+    address phones use; 127.0.0.1 otherwise (no mDNS, or another computer took the name)."""
+    if LAN:
+        ip = await asyncio.to_thread(lan.resolve, lan.MDNS_NAME)
+        if ip and (ipaddress.ip_address(ip).is_loopback or own_address(ip)):
+            return f"http://{lan.MDNS_NAME}:{port}/"
+    return f"http://127.0.0.1:{port}/"
+
+
 async def run(port=8765, open_browser=True):
     url = f"http://127.0.0.1:{port}/"
-    runner = web.AppRunner(make_app())
+    web_app = make_app()
+    state = web_app["halot"]
+    state.port = port
+    runner = web.AppRunner(web_app)
     await runner.setup()
     try:
-        await web.TCPSite(runner, "127.0.0.1", port).start()
+        if LAN:
+            await web.TCPSite(runner, "0.0.0.0", port).start()
+        else:
+            await web.TCPSite(runner, "127.0.0.1", port).start()
     except OSError:
         await runner.cleanup()
         print(f"ResinDeck is already running at {url}")
         if open_browser:
-            webbrowser.open(url)
+            webbrowser.open(await browser_url(port))
         return
+    announcer = lan.Announcer(port)
+    ip = lan.local_ip() if LAN else None
+    if ip:
+        state.mdns = await announcer.start(ip)
     print(f"ResinDeck running at {url}  (Ctrl+C to quit)")
+    for u in remote_urls(state)[1]:
+        print(f"  on the network: {u}  (PIN {state.settings['pin']})")
     if open_browser:
-        webbrowser.open(url)
+        webbrowser.open(await browser_url(port) if state.mdns else url)
     try:
-        await asyncio.Event().wait()
+        await state.quit.wait()
     finally:
+        await announcer.stop()
         await runner.cleanup()

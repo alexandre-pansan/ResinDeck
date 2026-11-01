@@ -13,6 +13,8 @@ export class Viewer3D {
     this.camera = new THREE.PerspectiveCamera(40, 1, 0.5, 2000);
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
+    this.userMoved = false;
+    this.controls.addEventListener("start", () => { this.userMoved = true; });
 
     this.scene.add(new THREE.HemisphereLight(0xdde6ff, 0x202530, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -54,6 +56,22 @@ export class Viewer3D {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    if (!this.userMoved) this.frame();
+  }
+
+  // place the camera so the whole model fits, in tall (phone) and wide viewports alike
+  frame() {
+    if (!this.box) return;
+    const center = this.box.getCenter(new THREE.Vector3());
+    const radius = this.box.getSize(new THREE.Vector3()).length() / 2;
+    const vfov = THREE.MathUtils.degToRad(this.camera.fov);
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect);
+    const dist = (radius / Math.sin(Math.min(vfov, hfov) / 2)) * 1.05;
+    this.controls.target.copy(center);
+    this.camera.position.copy(center).add(new THREE.Vector3(1.3, 0.8, 1.6).normalize().multiplyScalar(dist));
+    this.camera.near = radius / 50;
+    this.camera.far = dist + radius * 50;
+    this.camera.updateProjectionMatrix();
   }
 
   clear() {
@@ -81,13 +99,9 @@ export class Viewer3D {
     const [vx, vy, vz] = meta.voxel;
     const [nz, ny, nx] = meta.shape;
     this.top = oz + nz * vz;
-    const center = new THREE.Vector3(ox + nx * vx / 2, this.top / 2, oy + ny * vy / 2);
-    const size = Math.max(nx * vx, ny * vy, this.top);
-    this.controls.target.copy(center);
-    this.camera.position.copy(center).add(new THREE.Vector3(size * 1.3, size * 0.8, size * 1.6));
-    this.camera.near = size / 100;
-    this.camera.far = size * 50;
-    this.camera.updateProjectionMatrix();
+    this.box = new THREE.Box3(new THREE.Vector3(ox, 0, oy), new THREE.Vector3(ox + nx * vx, this.top, oy + ny * vy));
+    this.userMoved = false;
+    this.frame();
     this.setCut(null);
   }
 

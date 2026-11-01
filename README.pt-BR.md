@@ -38,9 +38,10 @@ Baixe a versão mais recente na [página de Releases](https://github.com/alexand
 - **Windows:** `ResinDeck-<versão>-windows-x64.exe`. O arquivo ainda não é assinado, então o
   SmartScreen do Windows pode avisar: clique em **Mais informações** → **Executar assim mesmo**.
 
-O app roda em segundo plano, com um ícone na bandeja do sistema (**Abrir ResinDeck** / **Sair**), e
-abre a interface no navegador. No GNOME, o ícone da bandeja precisa da extensão AppIndicator, que
-já vem no Ubuntu.
+O app roda em segundo plano, com um ícone na bandeja do sistema, e abre a interface no navegador.
+Clicar no ícone abre a interface de novo; **Encerrar**, no topo da interface, fecha o ResinDeck. No
+Linux, o ícone da bandeja não tem menu, e no GNOME ele precisa da extensão AppIndicator, que já vem
+no Ubuntu.
 
 ## Instalação a partir do código
 
@@ -78,8 +79,21 @@ python3 -m venv .venv
 A interface está em inglês e português, escolhido pelo idioma do navegador (dá para trocar no
 canto superior direito).
 
-O servidor só escuta em `127.0.0.1`, então não fica acessível para outras máquinas. Tudo funciona
-sem internet, inclusive a visualização 3D.
+Tudo funciona sem internet, inclusive a visualização 3D.
+
+### Acompanhar a impressão pelo celular
+
+Com o celular no mesmo Wi-Fi, clique em **Celular** no topo e aponte a câmera para o QR code (ou
+abra <http://resindeck.local:8765/>), depois digite o PIN de 6 dígitos que aparece ali. O celular vê a
+interface completa: progresso, visualização 3D, pausar e parar.
+
+- Só o computador que roda o ResinDeck entra sem PIN, por qualquer um dos seus endereços. A mesma
+  janela lista os aparelhos conectados: desconecte um, ou clique em **novo PIN** para desconectar
+  todos.
+- O `resindeck.local` depende de mDNS: funciona no iPhone, Windows, macOS e Linux, mas não em
+  alguns Androids: nesses, abra o endereço IP que aparece embaixo do QR code.
+- No Windows, permita o ResinDeck quando o firewall perguntar na primeira execução.
+- Para deixar o ResinDeck acessível só neste computador, inicie com `RESINDECK_LAN=0`.
 
 ## Linha de comando
 

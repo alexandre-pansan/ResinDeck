@@ -38,9 +38,10 @@ Get the latest version from the [Releases page](https://github.com/alexandre-pan
 - **Windows:** `ResinDeck-<version>-windows-x64.exe`. The file is not signed yet, so Windows
   SmartScreen may warn about it: click **More info** → **Run anyway**.
 
-The app runs in the background with an icon in the system tray (**Open ResinDeck** / **Quit**) and
-opens the interface in your browser. On GNOME the tray icon needs the AppIndicator extension, which
-Ubuntu ships by default.
+The app runs in the background with an icon in the system tray and opens the interface in your
+browser. Clicking the icon opens the interface again; **Quit**, at the top of the interface, stops
+ResinDeck. On Linux the tray icon has no menu, and on GNOME it needs the AppIndicator extension,
+which Ubuntu ships by default.
 
 ## Install from source
 
@@ -78,8 +79,21 @@ python3 -m venv .venv
 The interface is in English and Portuguese, picked from your browser language (switch at the top
 right).
 
-The server only listens on `127.0.0.1`, so it is not reachable from other machines. Everything,
-including the 3D view, works offline.
+Everything, including the 3D view, works offline.
+
+### Follow the print from your phone
+
+With the phone on the same Wi-Fi, click **Phone** at the top and scan the QR code (or open
+<http://resindeck.local:8765/>), then type the 6-digit PIN shown there. The phone gets the full
+interface: progress, 3D view, pause and stop.
+
+- Only the computer running ResinDeck has access without the PIN, through any of its addresses.
+  The same window lists the connected devices: disconnect one, or click **new PIN** to sign out
+  all of them.
+- `resindeck.local` needs mDNS: it works on iPhone, Windows, macOS and Linux, but not on some
+  Android phones: there, open the IP address shown under the QR code.
+- On Windows, allow ResinDeck when the firewall asks on the first run.
+- To keep ResinDeck reachable only from this computer, start it with `RESINDECK_LAN=0`.
 
 ## Command line
 

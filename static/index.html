@@ -17,7 +17,9 @@
 <header>
   <h1>Resin<span class="brand">Deck</span></h1>
   <span id="conn" class="conn off" data-i18n="conn.server" data-i18n-title="conn.title"></span>
+  <button id="remote-btn" class="ghost" hidden data-i18n="remote.button" data-i18n-title="remote.buttonTitle"></button>
   <select id="lang" class="lang" aria-label="Language"></select>
+  <button id="quit-btn" class="ghost" hidden data-i18n="quit.button" data-i18n-title="quit.title"></button>
 </header>
 
 <main>
@@ -127,6 +129,41 @@
     </div>
   </form>
 </dialog>
+
+<dialog id="remote-dialog">
+  <form method="dialog">
+    <h3 data-i18n="remote.title"></h3>
+    <div id="remote-on">
+      <p class="muted small" data-i18n="remote.hint"></p>
+      <img id="remote-qr" class="qr" alt="">
+      <div id="remote-urls" class="remote-urls"></div>
+      <div class="pin-row">
+        <span class="muted" data-i18n="remote.pin"></span>
+        <span id="remote-pin" class="pin"></span>
+        <button type="button" id="remote-new-pin" class="ghost small" data-i18n="remote.newPin"></button>
+      </div>
+      <p class="muted small" data-i18n="remote.newPinHint"></p>
+      <h2 class="devices-title" data-i18n="remote.devices"></h2>
+      <div id="remote-devices" class="devices"></div>
+    </div>
+    <p id="remote-off" class="muted" hidden data-i18n="remote.off"></p>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button value="close" class="primary" data-i18n="dialog.close"></button>
+    </div>
+  </form>
+</dialog>
+
+<div id="login" class="login" hidden>
+  <form id="login-form" class="login-box">
+    <h1>Resin<span class="brand">Deck</span></h1>
+    <p class="muted" data-i18n="login.text"></p>
+    <input name="pin" class="pin-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+      pattern="[0-9]{6}" required placeholder="000000">
+    <p id="login-error" class="error"></p>
+    <button class="primary" data-i18n="login.enter"></button>
+  </form>
+</div>
 
 <dialog id="confirm-dialog">
   <form method="dialog">
