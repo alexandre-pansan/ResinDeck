@@ -22,6 +22,7 @@ async def client(aiohttp_client, tmp_path, monkeypatch, library):
     monkeypatch.setattr(server, "SETTINGS", tmp_path / "config" / "settings.json")
     monkeypatch.setattr(server, "CACHE", tmp_path / "cache")
     monkeypatch.setattr(server, "POLL_INTERVAL", 0.05)
+    monkeypatch.setattr(server, "RETRY_DELAY", 0.05)
     # the test client always connects from 127.0.0.1: requests carrying X-Test-Remote act as a
     # device on the network, everything else as this computer
     real_is_local = server.is_local
@@ -506,7 +507,8 @@ async def test_scan_finds_the_printer(client, printer, monkeypatch):
 
     monkeypatch.setattr(server, "local_networks", lambda: [ipaddress.ip_network("127.0.0.0/30")])
     found = await (await client.post("/api/printers/scan")).json()
-    assert {"host": "127.0.0.1", "driver": "halot", "driverName": "Creality HALOT", "known": False} in found
+    assert {"host": "127.0.0.1", "mac": None, "driver": "halot", "driverName": "Creality HALOT",
+            "known": False} in found
 
 
 def test_local_networks(monkeypatch):
@@ -558,3 +560,96 @@ async def test_browser_url(monkeypatch):
     assert await server.browser_url(8765) == "http://127.0.0.1:8765/"
     monkeypatch.setattr(server, "LAN", False)
     assert await server.browser_url(8765) == "http://127.0.0.1:8765/"
+
+
+# --- printers that change IP address (DHCP) ------------------------------------------
+
+MAC = "fc:ee:32:02:b5:57"
+
+
+async def test_printer_learns_its_mac(client, printer, monkeypatch):
+    monkeypatch.setattr(server.lan, "mac_of", lambda ip: MAC if ip == "127.0.0.1" else None)
+    pid, p = await add_printer(client)
+    assert p.cfg["mac"] == MAC
+    assert json.loads(server.SETTINGS.read_text())["printers"][0]["mac"] == MAC
+    assert (await (await client.get("/api/printers")).json())[0]["mac"] == MAC
+
+
+async def test_printer_found_at_its_new_address(client, printer, monkeypatch):
+    # the printer was at 127.0.0.2 and DHCP moved it to 127.0.0.1 (where the fake one listens)
+    monkeypatch.setattr(server.lan, "mac_of", lambda ip: MAC if ip == "127.0.0.1" else None)
+    monkeypatch.setattr(server.lan, "neighbors", lambda: {"127.0.0.2": MAC, "127.0.0.1": MAC})
+    r = await client.post("/api/printers", json={"host": "127.0.0.2", "password": "secret1"})
+    p = client.state.printers[(await r.json())["id"]]
+    p.cfg["mac"] = MAC
+    await wait_for(lambda: p.online)
+    assert p.cfg["host"] == "127.0.0.1"
+    assert json.loads(server.SETTINGS.read_text())["printers"][0]["host"] == "127.0.0.1"
+
+
+async def test_missing_printer_is_searched_on_the_network(client, printer, monkeypatch):
+    import ipaddress
+
+    swept = []
+    monkeypatch.setattr(server, "local_networks", lambda: [ipaddress.ip_network("127.0.0.0/30")])
+    real_sweep = server.sweep
+
+    async def tracking_sweep(classes):
+        swept.append(classes)
+        return await real_sweep(classes)
+
+    monkeypatch.setattr(server, "sweep", tracking_sweep)
+    # the ARP table only knows the printer after the sweep talked to every address
+    monkeypatch.setattr(server.lan, "neighbors", lambda: {"127.0.0.1": MAC} if swept else {})
+    monkeypatch.setattr(server.lan, "mac_of", lambda ip: MAC if ip == "127.0.0.1" else None)
+    r = await client.post("/api/printers", json={"host": "127.0.0.2", "password": "secret1"})
+    p = client.state.printers[(await r.json())["id"]]
+    p.cfg["mac"] = MAC
+    await wait_for(lambda: p.online)
+    assert p.cfg["host"] == "127.0.0.1" and swept
+
+
+async def test_another_device_at_the_old_address(client, printer, monkeypatch):
+    monkeypatch.setattr(server.lan, "mac_of", lambda ip: "00:11:22:33:44:55")
+    monkeypatch.setattr(server.lan, "neighbors", lambda: {})
+    monkeypatch.setattr(server, "local_networks", lambda: [])
+    r = await client.post("/api/printers", json={"host": "127.0.0.1", "password": "secret1"})
+    p = client.state.printers[(await r.json())["id"]]
+    p.cfg["mac"] = MAC  # ours, but something else answers there now
+    await wait_for(lambda: p.failures >= 2)
+    assert not p.online and p.error == "no_connection" and p.cfg["host"] == "127.0.0.1"
+
+
+async def test_network_search_is_rate_limited(client, monkeypatch):
+    calls = []
+
+    async def find(mac, driver, exclude=None):
+        calls.append(mac)
+        return None
+
+    monkeypatch.setattr(server, "find_by_mac", find)
+    p = server.Printer({"id": "x", "name": "R6", "host": "192.0.2.1", "mac": MAC}, lambda: None)
+    p.task.cancel()
+    assert not await p.relocate()
+    assert not await p.relocate()  # within SEARCH_INTERVAL: no second search
+    assert calls == [MAC]
+    p.cfg.pop("mac")
+    p.last_search = None
+    assert not await p.relocate() and calls == [MAC]  # nothing to look for without a MAC
+
+
+def test_editing_keeps_the_mac_only_for_the_same_address():
+    old = {"id": "a", "name": "R6", "driver": "halot", "host": "10.0.0.5", "password": "pw", "mac": MAC}
+    assert server.clean_printer({"host": "10.0.0.5"}, old)["mac"] == MAC
+    assert "mac" not in server.clean_printer({"host": "10.0.0.6"}, old)
+
+
+async def test_scan_recognizes_a_known_printer_by_mac(client, printer, monkeypatch):
+    import ipaddress
+
+    monkeypatch.setattr(server, "local_networks", lambda: [ipaddress.ip_network("127.0.0.0/30")])
+    monkeypatch.setattr(server.lan, "neighbors", lambda: {"127.0.0.1": MAC})
+    client.state.settings["printers"].append({"id": "old", "name": "R6", "host": "10.9.9.9", "mac": MAC})
+    found = await (await client.post("/api/printers/scan")).json()
+    assert found == [{"host": "127.0.0.1", "mac": MAC, "driver": "halot", "driverName": "Creality HALOT",
+                      "known": True}]

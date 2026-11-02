@@ -126,6 +126,10 @@ Run it as `.venv/bin/python resindeck.py ...`, or create a small wrapper script 
 
 On first start the web interface imports the printer from the command line config.
 
+You do not need to give the printer a fixed IP. ResinDeck remembers its MAC address, and when the
+printer stops answering it looks for that MAC on the network and updates the IP by itself. This
+works when the printer and the computer are on the same network, which is the usual case at home.
+
 The printer password must be 1 to 8 characters. Longer passwords can be set on the printer but
 give a token error, also with HALOT BOX.
 

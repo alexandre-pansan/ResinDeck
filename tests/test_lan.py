@@ -1,6 +1,7 @@
 import ipaddress
 import socket
 import time
+import types
 
 import lan
 
@@ -83,3 +84,74 @@ async def test_announcer_registers_and_unregisters(monkeypatch):
     assert ("register", "resindeck.local.", 8765) in calls
     assert calls[-2:] == [("unregister",), ("close",)]
     assert a.zc is None
+
+
+# --- ARP table -----------------------------------------------------------------------
+
+LINUX = """IP address       HW type     Flags       HW address            Mask     Device
+192.168.15.8     0x1         0x2         fc:ee:32:02:b5:57     *        enp6s0
+192.168.15.9     0x1         0x0         00:00:00:00:00:00     *        enp6s0
+192.168.15.1     0x1         0x2         44:89:6D:41:81:10     *        enp6s0
+"""
+WINDOWS = """
+Interface: 192.168.15.13 --- 0x9
+  Internet Address      Physical Address      Type
+  192.168.15.8          fc-ee-32-02-b5-57     dynamic
+  192.168.15.255        ff-ff-ff-ff-ff-ff     static
+  224.0.0.22            01-00-5e-00-00-16     static
+"""
+MACOS = """? (192.168.15.8) at fc:ee:32:2:b5:57 on en0 ifscope [ethernet]
+? (192.168.15.20) at (incomplete) on en0 ifscope [ethernet]
+"""
+
+
+def test_parse_linux_proc_arp():
+    assert lan.parse_neighbors(LINUX) == {"192.168.15.8": "fc:ee:32:02:b5:57", "192.168.15.1": "44:89:6d:41:81:10"}
+
+
+def test_parse_windows_arp():
+    table = lan.parse_neighbors(WINDOWS)
+    assert table["192.168.15.8"] == "fc:ee:32:02:b5:57"
+    assert "192.168.15.255" not in table  # broadcast
+    assert "224.0.0.22" not in table      # multicast
+    assert "192.168.15.13" not in table   # the interface line has no MAC
+
+
+def test_parse_macos_arp():
+    assert lan.parse_neighbors(MACOS) == {"192.168.15.8": "fc:ee:32:02:b5:57"}  # pads "2" to "02"
+
+
+def test_normalize_mac():
+    assert lan.normalize_mac("FC-EE-32-2-B5-57") == "fc:ee:32:02:b5:57"
+    assert lan.normalize_mac("") is None and lan.normalize_mac("00:00:00:00:00:00") is None
+
+
+def test_neighbors_reads_proc_on_linux(tmp_path, monkeypatch):
+    arp = tmp_path / "arp"
+    arp.write_text(LINUX)
+    monkeypatch.setattr(lan, "Path", lambda p: arp)
+    assert lan.mac_of("192.168.15.8") == "fc:ee:32:02:b5:57"
+    assert lan.mac_of("10.0.0.1") is None
+
+
+def test_neighbors_runs_arp_elsewhere(tmp_path, monkeypatch):
+    monkeypatch.setattr(lan, "Path", lambda p: tmp_path / "missing")
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return types.SimpleNamespace(stdout=WINDOWS)
+
+    monkeypatch.setattr(lan.subprocess, "run", fake_run)
+    assert lan.neighbors()["192.168.15.8"] == "fc:ee:32:02:b5:57"
+    assert calls == [["arp", "-a"]]
+
+
+def test_neighbors_without_arp(tmp_path, monkeypatch):
+    monkeypatch.setattr(lan, "Path", lambda p: tmp_path / "missing")
+
+    def missing(cmd, **kw):
+        raise FileNotFoundError("arp")
+
+    monkeypatch.setattr(lan.subprocess, "run", missing)
+    assert lan.neighbors() == {}

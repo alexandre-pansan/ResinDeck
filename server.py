@@ -36,6 +36,8 @@ SETTINGS = CONFIG.parent / "settings.json"
 CACHE = Path.home() / ".cache" / "resindeck"
 STATIC = Path(__file__).parent / "static"
 POLL_INTERVAL = 3
+RETRY_DELAY = 5        # seconds between reconnection attempts
+SEARCH_INTERVAL = 60   # at most one network search per minute for a printer that went missing
 LAN = os.environ.get("RESINDECK_LAN", "1") != "0"
 SESSION_COOKIE = "resindeck_session"
 
@@ -76,10 +78,13 @@ def save_settings(s):
 class Printer:
     """Keeps a connection to one printer through its driver, polls its status and runs commands."""
 
-    def __init__(self, cfg, notify):
+    def __init__(self, cfg, notify, save=lambda: None):
         self.cfg = cfg
         self.notify = notify
+        self.save = save  # persists cfg after the MAC address or a new IP was found
         self.driver = drivers.get(cfg.get("driver"))
+        self.failures = 0
+        self.last_search = None
         self.lock = asyncio.Lock()
         self.conn = None  # connected driver instance
         self.online = False
@@ -91,7 +96,7 @@ class Printer:
 
     def public(self):
         return {
-            "id": self.cfg["id"], "name": self.cfg["name"], "host": self.cfg["host"],
+            "id": self.cfg["id"], "name": self.cfg["name"], "host": self.cfg["host"], "mac": self.cfg.get("mac"),
             "driver": self.driver.id, "driverName": self.driver.name, "extensions": list(self.driver.extensions),
             "hasPassword": bool(self.cfg.get("password")), "needsPassword": self.driver.password,
             "online": self.online, "version": self.version,
@@ -103,7 +108,9 @@ class Printer:
         while True:
             try:
                 async with self.driver(self.cfg["host"], self.cfg.get("password", "")) as d:
-                    self.conn = d
+                    if not await self.check_mac():
+                        raise ConnectionError("another device answers at this address")
+                    self.conn, self.failures = d, 0
                     self.online, self.version, self.error = True, d.version, None
                     self.notify()
                     while True:
@@ -114,8 +121,42 @@ class Printer:
             except Exception:
                 self.conn = None
                 self.online, self.status, self.error = False, None, "no_connection"
+                self.failures += 1
                 self.notify()
-                await asyncio.sleep(5)
+                if self.failures >= 2 and await self.relocate():
+                    continue  # try the new address right away
+                await asyncio.sleep(RETRY_DELAY)
+
+    # DHCP may give the printer another IP address: remember its MAC address, which does not change,
+    # and look for it on the network when the printer stops answering at the old address.
+
+    async def check_mac(self):
+        """Learn the MAC address on the first connection; False if a different device answers."""
+        ip = await asyncio.to_thread(lan.resolve, self.cfg["host"])
+        mac = ip and await asyncio.to_thread(lan.mac_of, ip)
+        if not mac:
+            return True  # not on this network segment, or the system does not say: trust the address
+        if not self.cfg.get("mac"):
+            self.cfg["mac"] = mac
+            self.save()
+            return True
+        return mac == self.cfg["mac"]
+
+    async def relocate(self):
+        """Find the printer's MAC address at another IP. True if the address changed."""
+        mac = self.cfg.get("mac")
+        now = time.monotonic()
+        if not mac or (self.last_search is not None and now - self.last_search < SEARCH_INTERVAL):
+            return False
+        self.last_search = now
+        ip = await find_by_mac(mac, self.driver, exclude=self.cfg["host"])
+        if not ip:
+            return False
+        print(f"{self.cfg['name']}: {mac} moved from {self.cfg['host']} to {ip}")
+        self.cfg["host"] = ip
+        self.save()
+        self.notify()
+        return True
 
     async def poll(self):
         d = self.conn
@@ -183,6 +224,35 @@ def local_networks():
     return [ipaddress.ip_network(f"{ip}/24", strict=False)] if ip else []
 
 
+async def sweep(driver_classes):
+    """Ask every address on the local network whether it is a printer of these families.
+    Returns [(driver, host)]. As a side effect the ARP table learns every device that answered."""
+    hosts = [str(h) for net in local_networks() for h in net.hosts()]
+    sem = asyncio.Semaphore(128)
+
+    async def check(driver, host):
+        async with sem:
+            return (driver, host) if await driver.probe(host) else None
+
+    jobs = [check(d, h) for d in driver_classes for h in hosts]
+    return [r for r in await asyncio.gather(*jobs) if r]
+
+
+async def find_by_mac(mac, driver, exclude=None):
+    """The IP address where the printer with this MAC address answers now, or None."""
+    def candidates(table):
+        return [ip for ip, m in table.items() if m == mac and ip != exclude]
+
+    ips = candidates(await asyncio.to_thread(lan.neighbors))
+    if not ips:
+        await sweep([driver])  # fills the ARP table
+        ips = candidates(await asyncio.to_thread(lan.neighbors))
+    for ip in ips:
+        if await driver.probe(ip):
+            return ip
+    return None
+
+
 # --- files ----------------------------------------------------------------------
 
 @lru_cache(maxsize=32)
@@ -229,7 +299,7 @@ class App:
     async def start(self):
         save_settings(self.settings)
         for cfg in self.settings["printers"]:
-            self.printers[cfg["id"]] = Printer(cfg, self.notify)
+            self.printers[cfg["id"]] = Printer(cfg, self.notify, self.save)
 
     async def stop(self):
         for p in self.printers.values():
@@ -271,6 +341,9 @@ class App:
             await ws.send_str(data)
         except Exception:
             self.clients.discard(ws)
+
+    def save(self):
+        save_settings(self.settings)
 
     def printer_list(self):
         return [self.printers[c["id"]].public() for c in self.settings["printers"]]
@@ -604,6 +677,8 @@ def clean_printer(body, old=None):
         raise PrinterError("Enter the printer IP address.", "no_host")
     cfg = {"id": old.get("id") or uuid.uuid4().hex[:8], "name": name, "driver": driver.id, "host": host,
            "password": old.get("password", "")}
+    if old.get("mac") and host == old.get("host"):
+        cfg["mac"] = old["mac"]  # a new address may be another printer: learn its MAC again
     if body.get("password") is not None and body["password"] != "":
         driver.check_password(str(body["password"]))
         cfg["password"] = str(body["password"])
@@ -625,7 +700,7 @@ async def printer_add(request):
     cfg = clean_printer(await read_json(request))
     app.settings["printers"].append(cfg)
     save_settings(app.settings)
-    app.printers[cfg["id"]] = Printer(cfg, app.notify)
+    app.printers[cfg["id"]] = Printer(cfg, app.notify, app.save)
     app.notify()
     return web.json_response({"id": cfg["id"]})
 
@@ -640,7 +715,7 @@ async def printer_edit(request):
     app.settings["printers"] = [cfg if c["id"] == cfg["id"] else c for c in app.settings["printers"]]
     save_settings(app.settings)
     await old.close()
-    app.printers[cfg["id"]] = Printer(cfg, app.notify)
+    app.printers[cfg["id"]] = Printer(cfg, app.notify, app.save)
     app.notify()
     return web.json_response({"ok": True})
 
@@ -663,17 +738,13 @@ async def printer_delete(request):
 @json_error
 async def printer_scan(request):
     local_only(request)
-    known = {c["host"] for c in app_of(request).settings["printers"]}
-    hosts = [str(h) for net in local_networks() for h in net.hosts()]
-    sem = asyncio.Semaphore(128)
-
-    async def check(driver, host):
-        async with sem:
-            return (driver, host) if await driver.probe(host) else None
-
-    jobs = [check(d, h) for d in drivers.DRIVERS.values() for h in hosts]
-    found = [r for r in await asyncio.gather(*jobs) if r]
-    return web.json_response([{"host": h, "driver": d.id, "driverName": d.name, "known": h in known}
+    printers = app_of(request).settings["printers"]
+    known_hosts = {c["host"] for c in printers}
+    known_macs = {c.get("mac") for c in printers} - {None}
+    found = await sweep(drivers.DRIVERS.values())
+    table = await asyncio.to_thread(lan.neighbors)
+    return web.json_response([{"host": h, "mac": table.get(h), "driver": d.id, "driverName": d.name,
+                               "known": h in known_hosts or table.get(h) in known_macs}
                               for d, h in found])
 
 

@@ -120,7 +120,7 @@ function renderPrinters() {
       el("div", { class: "printer-top" },
         el("span", { class: `dot ${v.cls}` }),
         el("span", { class: "printer-name" }, p.name),
-        el("span", { class: "printer-host", title: p.driverName }, p.host)),
+        el("span", { class: "printer-host", title: [p.driverName, p.mac].filter(Boolean).join(" · ") }, p.host)),
       el("div", { class: "printer-state" }, v.label, p.version ? el("span", { class: "muted small" }, `  · fw ${p.version}`) : null),
       fname ? el("div", { class: "printer-file", title: fname },
         local ? el("a", { onclick: () => openFile(local, p.id) }, fname) : fname) : null,
@@ -210,6 +210,8 @@ async function openPrinterDialog(p = null) {
   $("#printer-dialog-title").textContent = p ? t("printerDialog.edit") : t("printerDialog.add");
   f.name.value = p?.name || "";
   f.host.value = p?.host || "";
+  $("#mac-hint").hidden = !p?.mac;
+  $("#mac-hint").textContent = p?.mac ? t("printerDialog.macHint", { mac: p.mac }) : "";
   $("#pw-hint").hidden = !p?.hasPassword;
   $("#printer-delete").hidden = !p;
   $("#printer-error").textContent = "";

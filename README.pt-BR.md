@@ -125,6 +125,10 @@ Rode como `.venv/bin/python resindeck.py ...`, ou crie um script `resindeck` no 
 
 Na primeira execução, a interface importa a impressora da configuração da linha de comando.
 
+Não é preciso fixar o IP da impressora. O ResinDeck guarda o endereço MAC dela, e quando ela para de
+responder, procura esse MAC na rede e atualiza o IP sozinho. Isso funciona com a impressora e o
+computador na mesma rede, o caso normal em casa.
+
 A senha da impressora precisa ter de 1 a 8 caracteres. Dá para definir senhas maiores na
 impressora, mas elas dão erro de token, inclusive no HALOT BOX.
 
