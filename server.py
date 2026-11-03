@@ -30,6 +30,7 @@ import drivers
 import formats
 import lan
 from drivers import PrinterError
+from drivers.base import FINISHED
 from resindeck import CONFIG, load_config
 
 SETTINGS = CONFIG.parent / "settings.json"
@@ -92,6 +93,7 @@ class Printer:
         self.status = None
         self.error = None
         self.upload = None  # {"file", "pct"}
+        self.seen_active = False  # saw the current job printing since ResinDeck started
         self.task = asyncio.create_task(self.loop())
 
     def public(self):
@@ -101,7 +103,7 @@ class Printer:
             "hasPassword": bool(self.cfg.get("password")), "needsPassword": self.driver.password,
             "online": self.online, "version": self.version,
             "status": self.status.public() if self.status else None,
-            "error": self.error, "upload": self.upload,
+            "error": self.error, "upload": self.upload, "job": self.cfg.get("job"),
         }
 
     async def loop(self):
@@ -169,7 +171,35 @@ class Printer:
                     self.status, self.error = await d.status(), None
                 except PrinterError as e:
                     self.status, self.error = None, e.code or str(e)
+        self.track_job()
         self.notify()
+
+    def track_job(self):
+        """Printers report how long is left, not when the print began: note when each job starts and ends.
+        Saved as cfg["job"] = {"file", "started", "approx", "ended"}: Unix times. `started` is None when unknown;
+        `ended` is None while printing, and False once over without a known finish time (stopped, failed,
+        or finished while ResinDeck was closed)."""
+        st = self.status
+        if not st:
+            return
+        job = self.cfg.get("job")
+        now = time.time()
+        if not st.ready:
+            if job and job["file"] == st.file and job["ended"] is None:
+                self.seen_active = True
+                return
+            started, approx = now, False
+            if st.layer > 1:  # already printing when first seen: work the start out from the progress
+                approx = True
+                done = st.layer - 1
+                started = now - st.remaining * done / (st.layers - done) if st.remaining and st.layers > done else None
+            self.cfg["job"] = {"file": st.file, "started": started, "approx": approx, "ended": None}
+            self.seen_active = True
+            self.save()
+        elif job and job["ended"] is None:
+            job["ended"] = now if self.seen_active and st.state == FINISHED else False
+            self.seen_active = False
+            self.save()
 
     def connected(self):
         if not self.conn:
@@ -677,8 +707,8 @@ def clean_printer(body, old=None):
         raise PrinterError("Enter the printer IP address.", "no_host")
     cfg = {"id": old.get("id") or uuid.uuid4().hex[:8], "name": name, "driver": driver.id, "host": host,
            "password": old.get("password", "")}
-    if old.get("mac") and host == old.get("host"):
-        cfg["mac"] = old["mac"]  # a new address may be another printer: learn its MAC again
+    if host == old.get("host"):  # a new address may be another printer: learn its MAC again
+        cfg.update({k: old[k] for k in ("mac", "job") if old.get(k)})
     if body.get("password") is not None and body["password"] != "":
         driver.check_password(str(body["password"]))
         cfg["password"] = str(body["password"])

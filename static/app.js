@@ -66,6 +66,13 @@ const fmtTime = (s) => {
   return h ? `${h}h${String(m).padStart(2, "0")}` : `${m} min`;
 };
 const fmtSize = (b) => (b > 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`);
+// A clock time; with the weekday when it is not today (a long print ends tomorrow)
+const fmtClock = (ts) => {
+  const d = new Date(ts * 1000);
+  const opts = { hour: "2-digit", minute: "2-digit" };
+  if (d.toDateString() !== new Date().toDateString()) opts.weekday = "short";
+  return d.toLocaleString(lang, opts);
+};
 const fmtDate = (ts) => new Date(ts * 1000).toLocaleString(lang, { dateStyle: "short", timeStyle: "short" });
 const q = (path) => `path=${encodeURIComponent(path)}`;
 
@@ -105,6 +112,20 @@ function printerView(p) {
   return { label, cls, total, cur, active, paused, st };
 }
 
+// When the print started and when it should end (or ended). The printer only reports the time left.
+function jobTimes(p, v, rem) {
+  const job = p.job;
+  if (!p.online || !job || job.file !== p.status?.file) return null;
+  const about = job.approx ? "≈ " : "";
+  const start = job.started ? t("printers.started", { time: about + fmtClock(job.started) }) : "";
+  let end = "";
+  if (v.active && rem) end = t("printers.eta", { time: fmtClock(Date.now() / 1000 + rem) });
+  else if (v.st === "finished" && job.ended) end = t("printers.ended", { time: fmtClock(job.ended) });
+  else if (!v.active) return null;
+  if (!start && !end) return null;
+  return el("div", { class: "progress-text" }, el("span", {}, start), el("span", {}, end));
+}
+
 function renderPrinters() {
   const box = $("#printers");
   box.replaceChildren();
@@ -130,6 +151,7 @@ function renderPrinters() {
           el("span", {}, t("printers.layer", { cur: v.cur, total: v.total, pct: Math.floor((v.cur * 100) / v.total) })),
           el("span", {}, rem ? t("printers.remaining", { time: fmtTime(rem) }) : "")),
       ] : null,
+      jobTimes(p, v, rem),
       p.upload ? [
         el("div", { class: "progress upload" }, el("div", { style: `width:${p.upload.pct}%` })),
         el("div", { class: "progress-text" },

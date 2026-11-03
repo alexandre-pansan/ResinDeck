@@ -1,6 +1,7 @@
 import asyncio
 import json
 import struct
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -653,3 +654,80 @@ async def test_scan_recognizes_a_known_printer_by_mac(client, printer, monkeypat
     found = await (await client.post("/api/printers/scan")).json()
     assert found == [{"host": "127.0.0.1", "mac": MAC, "driver": "halot", "driverName": "Creality HALOT",
                       "known": True}]
+
+
+# --- print start and end times ---------------------------------------------------------
+
+def idle_printer(cfg=None):
+    from drivers.base import Status
+
+    saved = []
+    p = server.Printer({"id": "x", "name": "R6", "host": "192.0.2.1", **(cfg or {})}, lambda: None,
+                       lambda: saved.append(dict(p.cfg.get("job") or {})))
+    p.task.cancel()
+    return p, saved, Status
+
+
+async def test_job_start_and_finish_are_noted(monkeypatch):
+    p, saved, Status = idle_printer()
+    clock = iter([0, 1000, 1003, 1006, 5000])
+    monkeypatch.setattr(server.time, "time", lambda: next(clock))
+    p.status = Status(state="idle")
+    p.track_job()
+    assert "job" not in p.cfg and not saved  # nothing printing
+    p.status = Status(state="printing", file="a.cxdlpv4", layer=1, layers=100, remaining=4000)
+    p.track_job()
+    p.track_job()  # same job: not saved again
+    assert p.cfg["job"] == {"file": "a.cxdlpv4", "started": 1000, "approx": False, "ended": None}
+    p.status = Status(state="finished", file="a.cxdlpv4")
+    p.track_job()
+    assert p.cfg["job"]["ended"] == 1006 and len(saved) == 2
+    p.status = Status(state="printing", file="a.cxdlpv4", layer=1, layers=100)
+    p.track_job()  # printing the same file again is a new job
+    assert p.cfg["job"] == {"file": "a.cxdlpv4", "started": 5000, "approx": False, "ended": None}
+
+
+async def test_job_found_halfway_gets_an_estimated_start(monkeypatch):
+    p, saved, Status = idle_printer()
+    monkeypatch.setattr(server.time, "time", lambda: 10_000)
+    # layer 51 of 100: 50 layers done, 50 left in 3000 s, so it began about 3000 s ago
+    p.status = Status(state="printing", file="b.cxdlpv4", layer=51, layers=100, remaining=3000)
+    p.track_job()
+    assert p.cfg["job"]["started"] == 7000 and p.cfg["job"]["approx"]
+    p.cfg.pop("job")
+    p.status = Status(state="printing", file="b.cxdlpv4", layer=51, layers=100)  # no time left reported
+    p.track_job()
+    assert p.cfg["job"]["started"] is None
+
+
+async def test_end_time_is_unknown_when_not_seen_finishing(monkeypatch):
+    # ResinDeck restarted after the print ended, or the print was stopped: no finish time
+    job = {"file": "a.cxdlpv4", "started": 1000, "approx": False, "ended": None}
+    p, saved, Status = idle_printer({"job": dict(job)})
+    p.status = Status(state="finished", file="a.cxdlpv4")
+    p.track_job()
+    assert p.cfg["job"]["ended"] is False
+    p, saved, Status = idle_printer({"job": dict(job)})
+    p.status = Status(state="printing", file="a.cxdlpv4", layer=2, layers=10)
+    p.track_job()  # still the saved job after a restart
+    assert p.cfg["job"]["started"] == 1000 and not saved
+    p.status = Status(state="stopped", file="a.cxdlpv4")
+    p.track_job()
+    assert p.cfg["job"]["ended"] is False
+    p.status = None
+    p.track_job()  # no status: nothing changes
+
+
+async def test_print_job_in_the_api(client, printer):
+    pid, p = await add_printer(client)
+    await client.post(f"/api/printers/{pid}/print", json={"filename": "part.cxdlpv4"})
+    [public] = await (await client.get("/api/printers")).json()
+    assert public["job"]["file"] == "part.cxdlpv4" and public["job"]["ended"] is None
+    assert abs(public["job"]["started"] - time.time()) < 5
+    assert server.load_settings()["printers"][0]["job"] == public["job"]  # survives a restart
+
+
+def test_editing_keeps_the_job_for_the_same_address():
+    old = {"id": "a", "name": "R6", "driver": "halot", "host": "10.0.0.5", "job": {"file": "a"}}
+    assert server.clean_printer({"host": "10.0.0.5"}, old)["job"] == {"file": "a"}
+    assert "job" not in server.clean_printer({"host": "10.0.0.6"}, old)
