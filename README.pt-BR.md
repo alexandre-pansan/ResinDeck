@@ -1,5 +1,7 @@
 # ResinDeck
 
+[![CI](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml)
+
 Um painel de controle open source para impressoras 3D de resina: veja seus arquivos fatiados em
 3D, envie para a impressora pela rede e acompanhe a impressão, do seu próprio computador.
 
@@ -94,7 +96,9 @@ interface completa: progresso, visualização 3D, pausar e parar.
 - O `resindeck.local` depende de mDNS: funciona no iPhone, Windows, macOS e Linux, mas não em
   alguns Androids: nesses, abra o endereço IP que aparece embaixo do QR code.
 - No Windows, permita o ResinDeck quando o firewall perguntar na primeira execução.
-- Para deixar o ResinDeck acessível só neste computador, inicie com `RESINDECK_LAN=0`.
+- As configurações das impressoras e as pastas da biblioteca só podem ser mudadas no computador.
+- Para deixar o ResinDeck acessível só neste computador, inicie com `RESINDECK_LAN=0`. Mais detalhes
+  no [SECURITY.md](SECURITY.md) (em inglês).
 
 ## Linha de comando
 
@@ -116,10 +120,14 @@ Rode como `.venv/bin/python resindeck.py ...`, ou crie um script `resindeck` no 
 | O quê | Onde |
 |---|---|
 | Configurações da interface (impressoras, senhas, pastas) | `~/.config/resindeck/settings.json`, permissão 600, editado pela interface |
-| Impressora da linha de comando | `~/.config/resindeck/config` (veja `config.example`), ou as variáveis `RESINDECK_HOST` / `RESINDECK_PASSWORD` |
+| Impressora da linha de comando | `~/.config/resindeck/config` (veja `config.example`), ou as variáveis `RESINDECK_HOST` / `RESINDECK_PASSWORD` / `RESINDECK_DRIVER` |
 | Cache da visualização 3D | `~/.cache/resindeck/` |
 
 Na primeira execução, a interface importa a impressora da configuração da linha de comando.
+
+Não é preciso fixar o IP da impressora. O ResinDeck guarda o endereço MAC dela, e quando ela para de
+responder, procura esse MAC na rede e atualiza o IP sozinho. Isso funciona com a impressora e o
+computador na mesma rede, o caso normal em casa.
 
 A senha da impressora precisa ter de 1 a 8 caracteres. Dá para definir senhas maiores na
 impressora, mas elas dão erro de token, inclusive no HALOT BOX.
@@ -135,6 +143,9 @@ impressora, mas elas dão erro de token, inclusive no HALOT BOX.
 
 ## Como funciona
 
+Cada família de impressora é um driver em `drivers/`, então adicionar uma marca é escrever um único
+módulo. Veja [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand) (em inglês).
+
 O protocolo da HALOT é um WebSocket na porta 18188 com comandos JSON e um token baseado em DES; os envios
 vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 [docs/PROTOCOL.md](docs/PROTOCOL.md) (em inglês).
@@ -142,9 +153,9 @@ vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 | Arquivo | O que faz |
 |---|---|
 | `resindeck.py` | linha de comando e ponto de entrada |
-| `halot.py` | driver das Creality HALOT (protocolo de rede) |
+| `drivers/` | um módulo por família de impressora. `base.py` é o contrato, `halot.py` o driver das Creality HALOT |
+| `formats/` | leitores de arquivos fatiados. `cxdlp.py` lê `.cxdlpv4`: cabeçalho, miniaturas, camadas, voxels do 3D |
 | `server.py` | servidor web local (aiohttp): biblioteca, visualizações, conexões com as impressoras |
-| `cxdlp.py` | leitor de `.cxdlpv4`: cabeçalho, miniaturas, imagens das camadas, voxels para o 3D |
 | `desktop.py` | ponto de entrada do app desktop: servidor em segundo plano e ícone na bandeja |
 | `static/` | interface web (JavaScript puro, three.js no 3D, `i18n.js` com as traduções) |
 | `packaging/` | ícone, receita do PyInstaller e script do AppImage |

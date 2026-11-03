@@ -3,3 +3,5 @@
 HOST=192.168.0.50
 # network password set/shown on the printer screen (max. 8 characters)
 PASSWORD=
+# printer type: halot (the default). See drivers/ for the others.
+DRIVER=halot

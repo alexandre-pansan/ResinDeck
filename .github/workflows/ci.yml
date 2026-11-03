@@ -1,0 +1,125 @@
+name: CI
+
+# Lint, tests with coverage, security checks and a smoke test of the desktop packages.
+# Runs on pull requests and on main; the release workflow runs it before publishing.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: Python (ruff)
+        run: ruff check --output-format github .
+      - name: JavaScript syntax
+        run: for f in static/*.js; do node --check "$f"; done
+      - name: Shell syntax
+        run: sh -n start.sh && sh -n packaging/build_appimage.sh
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements-dev.txt
+      - name: Tests with coverage
+        run: python -m pytest --cov --cov-report=term --cov-report=xml --cov-report=html --cov-fail-under=90
+      - name: Coverage summary
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        shell: bash
+        run: |
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v6
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.python == '3.12'
+        with:
+          name: coverage
+          path: |
+            coverage.xml
+            htmlcov/
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install bandit pip-audit
+      - name: Known vulnerabilities in dependencies (pip-audit)
+        run: pip-audit -r requirements-desktop.txt
+      - name: Static analysis (bandit, medium severity and up)
+        run: bandit -c pyproject.toml -r . -ll
+
+  build:
+    name: build (${{ matrix.os }})
+    needs: [lint, test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    env:
+      RESINDECK_LAN: "0"
+      RESINDECK_PORT: "18765"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-desktop.txt
+
+      - name: Build the AppImage
+        if: runner.os == 'Linux'
+        run: sh packaging/build_appimage.sh python
+      - name: Smoke test the AppImage
+        if: runner.os == 'Linux'
+        run: |
+          app=$(ls dist/*.AppImage)
+          APPIMAGE_EXTRACT_AND_RUN=1 "$app" > app.log 2>&1 &
+          for i in $(seq 60); do curl -sf "http://127.0.0.1:$RESINDECK_PORT/api/session" && break; sleep 1; done
+          curl -sf "http://127.0.0.1:$RESINDECK_PORT/" | grep -q ResinDeck
+          curl -sf "http://127.0.0.1:$RESINDECK_PORT/static/vendor/three/three.module.js" > /dev/null
+          curl -sf -X POST "http://127.0.0.1:$RESINDECK_PORT/api/quit"
+          wait || true
+          cat app.log
+
+      - name: Build the .exe
+        if: runner.os == 'Windows'
+        run: python -m PyInstaller --noconfirm --distpath build/dist --workpath build/work packaging/resindeck.spec
+      - name: Smoke test the .exe
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process build/dist/ResinDeck.exe -PassThru
+          $url = "http://127.0.0.1:$env:RESINDECK_PORT"
+          for ($i = 0; $i -lt 60; $i++) {
+            try { Invoke-WebRequest "$url/api/session" -UseBasicParsing | Out-Null; break } catch { Start-Sleep 1 }
+          }
+          $page = Invoke-WebRequest "$url/" -UseBasicParsing
+          if ($page.Content -notmatch "ResinDeck") { throw "unexpected page" }
+          Invoke-WebRequest "$url/api/quit" -Method Post -UseBasicParsing | Out-Null
+          if (-not $p.WaitForExit(20000)) { $p.Kill(); throw "ResinDeck did not quit" }

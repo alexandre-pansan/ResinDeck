@@ -1,5 +1,7 @@
 # ResinDeck
 
+[![CI](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandre-pansan/ResinDeck/actions/workflows/ci.yml)
+
 An open source control deck for resin 3D printers: preview your sliced files in 3D, send them
 to the printer over the network and follow the print, from your own computer.
 
@@ -94,7 +96,9 @@ interface: progress, 3D view, pause and stop.
 - `resindeck.local` needs mDNS: it works on iPhone, Windows, macOS and Linux, but not on some
   Android phones: there, open the IP address shown under the QR code.
 - On Windows, allow ResinDeck when the firewall asks on the first run.
-- To keep ResinDeck reachable only from this computer, start it with `RESINDECK_LAN=0`.
+- Printer settings and library folders can only be changed on the computer.
+- To keep ResinDeck reachable only from this computer, start it with `RESINDECK_LAN=0`. More in
+  [SECURITY.md](SECURITY.md).
 
 ## Command line
 
@@ -117,10 +121,14 @@ Run it as `.venv/bin/python resindeck.py ...`, or create a small wrapper script 
 | What | Where |
 |---|---|
 | Web interface settings (printers, passwords, folders) | `~/.config/resindeck/settings.json`, mode 600, edited from the interface |
-| Command line printer | `~/.config/resindeck/config` (see `config.example`), or the `RESINDECK_HOST` / `RESINDECK_PASSWORD` environment variables |
+| Command line printer | `~/.config/resindeck/config` (see `config.example`), or the `RESINDECK_HOST` / `RESINDECK_PASSWORD` / `RESINDECK_DRIVER` environment variables |
 | 3D preview cache | `~/.cache/resindeck/` |
 
 On first start the web interface imports the printer from the command line config.
+
+You do not need to give the printer a fixed IP. ResinDeck remembers its MAC address, and when the
+printer stops answering it looks for that MAC on the network and updates the IP by itself. This
+works when the printer and the computer are on the same network, which is the usual case at home.
 
 The printer password must be 1 to 8 characters. Longer passwords can be set on the printer but
 give a token error, also with HALOT BOX.
@@ -137,15 +145,18 @@ give a token error, also with HALOT BOX.
 
 ## How it works
 
+Each printer family is a driver in `drivers/`, so adding a brand means writing one module. See
+[Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand).
+
 The HALOT protocol is a WebSocket on port 18188 with JSON commands and a DES-based token; uploads
 go in compressed 1 MiB chunks. Everything known about it is in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
 | File | What it does |
 |---|---|
 | `resindeck.py` | command line and entry point |
-| `halot.py` | Creality HALOT driver (network protocol) |
+| `drivers/` | one module per printer family. `base.py` is the contract, `halot.py` the Creality HALOT driver |
+| `formats/` | sliced file readers. `cxdlp.py` reads `.cxdlpv4`: header, thumbnails, layers, voxels for 3D |
 | `server.py` | local web server (aiohttp): library, previews, printer connections |
-| `cxdlp.py` | `.cxdlpv4` reader: header, thumbnails, layer images, voxel grid for the 3D view |
 | `desktop.py` | desktop app entry point: background server and tray icon |
 | `static/` | web interface (plain JavaScript, three.js for 3D, `i18n.js` for translations) |
 | `packaging/` | icon, PyInstaller spec and AppImage build script |
