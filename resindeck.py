@@ -19,7 +19,7 @@ from pathlib import Path
 
 import websockets
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # start.sh runs Python with -I
 import drivers  # noqa: E402
