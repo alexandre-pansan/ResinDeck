@@ -5,6 +5,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # The requirements files give minimum versions, and pip installs the newest anyway.
+    # Only raise a minimum when a new release falls outside it: raising them all
+    # would drop support for older Python versions and distros for no gain.
+    versioning-strategy: increase-if-necessary
     groups:
       python:
         patterns: ["*"]
