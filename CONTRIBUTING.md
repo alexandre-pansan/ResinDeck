@@ -150,6 +150,17 @@ ResinDeck is being rewritten as a native C++ and Qt application with a full slic
 | `static/` | the web interface, served by both the Python and the C++ server |
 | `third_party/` | vendored libraries, each with a README saying where it comes from |
 
+On Linux, `build.sh` does all of it:
+
+```bash
+./build.sh setup        # first time: CMake, Ninja and Qt, without admin rights (Qt goes to ~/Qt)
+./build.sh run          # build (optimized) and open the window; ./build.sh run FILE.cxdlpv4 opens a file
+./build.sh test         # build with warnings as errors and sanitizers, and run the tests
+./build.sh              # just build, into build/release
+```
+
+The rest of this section is what it does, for other systems or a custom setup.
+
 It needs a C++20 compiler (GCC 11+, Clang 15+ or MSVC 2022), CMake, and Qt 6.8 or newer with the WebSockets,
 HttpServer and ShaderTools modules. CI uses Qt 6.10.3: aqtinstall cannot read the Windows packages of Qt 6.11
 yet. On Linux, Qt also needs the OpenGL development files (`sudo apt install libgl-dev libegl-dev` on Debian

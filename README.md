@@ -173,8 +173,8 @@ and printing in one place, while the browser and phone interface stays. The phas
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
 The first phase is done in this repository and not released yet: a native window with the GPU 3D view, the
-printers, the library and phone pairing, doing everything the Python version does. To try it, see
-[Native application](CONTRIBUTING.md#native-application-c-and-qt) in CONTRIBUTING.md.
+printers, the library and phone pairing, doing everything the Python version does. To try it on Linux, run `./build.sh setup` once, then
+`./build.sh run`. More in [Native application](CONTRIBUTING.md#native-application-c-and-qt).
 
 ## Credits
 

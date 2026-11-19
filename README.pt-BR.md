@@ -173,8 +173,8 @@ fatiar e imprimir num lugar só. A interface no navegador e no celular continua.
 
 A primeira fase já está pronta neste repositório, mas ainda não foi lançada: uma janela nativa com o 3D na
 placa de vídeo, as impressoras, a biblioteca e o pareamento do celular, fazendo tudo o que a versão em Python
-faz. Para testar, veja [Native application](CONTRIBUTING.md#native-application-c-and-qt) no
-CONTRIBUTING.md (em inglês).
+faz. Para testar no Linux, rode `./build.sh setup` uma vez e depois
+`./build.sh run`. Mais detalhes em [Native application](CONTRIBUTING.md#native-application-c-and-qt) (em inglês).
 
 ## Créditos
 
