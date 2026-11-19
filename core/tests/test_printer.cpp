@@ -1,5 +1,5 @@
 // The printer manager against the fake HALOT. Ported from the printer, MAC and job tests in
-// tests/test_server.py.
+// the Python version's tests/test_server.py (legacy branch).
 #include "fakeprinter.h"
 #include "printers/printer.h"
 

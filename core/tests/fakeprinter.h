@@ -1,5 +1,5 @@
 // A fake Creality HALOT on 127.0.0.1: speaks the WebSocket protocol of printers/halot.cpp
-// (see docs/PROTOCOL.md). The C++ version of tests/fakeprinter.py.
+// (see docs/PROTOCOL.md). Ported from the Python version's tests/fakeprinter.py (legacy branch).
 #pragma once
 
 #include "printers/halot.h"

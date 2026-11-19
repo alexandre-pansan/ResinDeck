@@ -1,4 +1,4 @@
-// The web server: security, pairing, the API and the WebSocket. Ported from tests/test_server.py.
+// The web server: security, pairing, the API and the WebSocket. Ported from the Python version's tests/test_server.py (legacy branch).
 // Requests with an "X-Test-Remote" header act as another device on the network.
 #include "fakeprinter.h"
 #include "formats/cxdlp.h"
@@ -154,8 +154,8 @@ private slots:
         QCOMPARE(js.status, 200);
         QVERIFY(js.headers.value("content-type").startsWith("text/javascript"));
         QVERIFY(js.headers.contains("content-security-policy"));
-        QCOMPARE(get("/static/../server.py").status, 404);
-        QCOMPARE(get("/static/%2e%2e/server.py").status, 404);
+        QCOMPARE(get("/static/../CMakeLists.txt").status, 404);
+        QCOMPARE(get("/static/%2e%2e/CMakeLists.txt").status, 404);
         QCOMPARE(get("/static/nope.js").status, 404);
         QCOMPARE(get("/nothing").status, 404);
         QCOMPARE(call("DELETE", "/api/printers").status, 405);

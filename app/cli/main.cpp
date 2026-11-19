@@ -1,5 +1,5 @@
 // resindeck-cli: send sliced files to resin printers over the network and control them.
-// The native version of resindeck.py's commands.
+// The same commands as the Python version's resindeck.py (legacy branch).
 //
 //   resindeck-cli version
 //   resindeck-cli status

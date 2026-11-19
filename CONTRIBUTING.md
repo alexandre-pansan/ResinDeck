@@ -6,10 +6,11 @@ Thanks for helping! Issues and pull requests are welcome, in English or Portugue
 
 Please include:
 
-- printer model and firmware (`resindeck version` prints the firmware version),
+- your system (Linux distribution or Windows version) and ResinDeck version (`resindeck --version`),
+- printer model and firmware (`resindeck-cli version` prints the firmware version),
 - what you did and what happened,
-- the error shown in the interface or terminal,
-- for status or protocol issues, the output of `resindeck raw-status`.
+- the error shown in the window, or printed in the terminal if you started ResinDeck from one,
+- for status or protocol issues, the output of `resindeck-cli raw-status`.
 
 Do not post your printer password. The token in captured traffic is derived from it and can be
 reversed, so remove `"token"` values too.
@@ -21,136 +22,9 @@ One, Sky, Lite, X1…), a report saying whether status, upload, print, pause and
 useful, even if everything works. [docs/PROTOCOL.md](docs/PROTOCOL.md) describes what we expect
 the printer to answer.
 
-## Adding a printer brand
+## Building
 
-Each printer family is a **driver**: one Python module in `drivers/`. The web server, the
-interface and the command line only talk to the driver contract in
-[`drivers/base.py`](drivers/base.py), so a new brand does not touch any other file.
-[`drivers/halot.py`](drivers/halot.py) is a complete example.
-
-### 1. Write the driver
-
-Create `drivers/<brand>.py` with a subclass of `Driver`:
-
-```python
-from drivers import base
-from drivers.base import Driver, PrinterError, Status, tcp_open
-
-
-class MyBrandDriver(Driver):
-    id = "mybrand"                  # stored in settings.json, never change it later
-    name = "MyBrand"                # shown in the interface
-    models = "Model X (tested)"
-    extensions = (".goo",)          # files the printer accepts
-    password = False                # True if status and commands need the printer password
-    password_max = 0                # longest password the printer accepts (0: no limit)
-
-    async def connect(self):        # open the connection; set self.version if you can
-    async def close(self):
-    async def ping(self):           # cheap "still there?" check, without a password
-    async def status(self):         # -> Status(state=base.PRINTING, file=..., layer=..., layers=..., remaining=...)
-    async def upload(self, path, on_progress=None):   # call on_progress(percent); return a dict
-    async def start(self, filename):
-    async def pause(self):
-    async def resume(self):
-    async def stop(self):
-
-    @classmethod
-    async def probe(cls, host):     # "is one of my printers at this address?" for Search the network
-```
-
-Rules of the contract:
-
-- **Status:** translate the printer's own state into one of the states in `drivers/base.py`
-  (`idle`, `printing`, `paused`, `finished`…). Put the printer's own name for it in `code` and its
-  full reply in `raw`. Anything you cannot map becomes `UNKNOWN`, and the interface shows `code`.
-- **Errors:** raise `PrinterError(message, code, **params)` for problems the user can fix (wrong
-  password, file refused). Let network errors (`OSError`, `asyncio.TimeoutError`, …) propagate:
-  ResinDeck shows the printer as offline and reconnects. Add every new `code` to `static/i18n.js`
-  as `errors.<code>`, in English and Portuguese.
-- **probe()** runs for every address on the network at once. Keep it under about a second, start
-  with `tcp_open(host, port)` and never send anything that changes the printer.
-- `self.host` is the address and `self.secret` the password the user typed.
-
-### 2. Register it
-
-Add the class to `DRIVERS` in [`drivers/__init__.py`](drivers/__init__.py). It then shows up in
-**+ add**, in **Search the network** and in `resindeck --driver mybrand`.
-
-### 3. Test it without the printer
-
-Write a fake printer that speaks your protocol, like [`tests/fakeprinter.py`](tests/fakeprinter.py)
-does for the HALOT, and test the driver against it, like `tests/test_halot.py`. That way the tests
-run in CI and nobody needs your printer to change the code safely.
-`tests/test_drivers.py::test_every_driver_fills_in_the_contract` checks that every registered
-driver implements every method. Then try it on the real printer and say in the pull request which
-model and firmware you used.
-
-Please also document the protocol, as [docs/PROTOCOL.md](docs/PROTOCOL.md) does for the HALOT.
-
-### Another file format
-
-If the printer uses another sliced format, add a reader in `formats/` with the interface described
-in [`formats/__init__.py`](formats/__init__.py) (header info, thumbnail, layer images, voxels for the
-3D view) and list its extensions in `READERS`. [`formats/cxdlp.py`](formats/cxdlp.py) is the
-reference, and [`tests/cxdlp_writer.py`](tests/cxdlp_writer.py) shows how to build test files.
-
-## Development
-
-```sh
-./start.sh                 # creates .venv and starts the interface
-.venv/bin/python resindeck.py status
-```
-
-- Python: standard library plus `websockets`, `cryptography`, `aiohttp`, `numpy`, `zeroconf`
-  (mDNS) and `segno` (QR code). Keep it that way unless there is a good reason.
-- Web interface: plain JavaScript modules, no build step. Reload the page to see changes; restart
-  the server after changing Python code.
-- The server listens on the network: every `/api` route and `/ws` need the PIN session unless
-  the request comes from this computer (see `guard` in `server.py`). Keep new routes under `/api`.
-- Changes that only paired devices should not make (settings, files on disk) must call
-  `local_only(request)`. See [SECURITY.md](SECURITY.md).
-- Do not commit sliced files, settings or passwords.
-
-## Tests and checks
-
-```sh
-uv pip install --python .venv/bin/python -r requirements-dev.txt   # or: .venv/bin/pip install -r ...
-.venv/bin/python -m pytest --cov          # tests and coverage
-.venv/bin/ruff check .                    # lint
-.venv/bin/bandit -c pyproject.toml -r . -ll
-.venv/bin/pip-audit -r requirements-desktop.txt
-```
-
-The tests need no printer and no sliced files: `tests/fakeprinter.py` is a fake HALOT that speaks
-the network protocol (including the error cases), and `tests/cxdlp_writer.py` writes small
-synthetic `.cxdlpv4` files. Add a test with every change; CI fails below 90% coverage.
-
-Every pull request runs `.github/workflows/ci.yml`:
-
-- lint (ruff, JavaScript and shell syntax);
-- tests with coverage on Linux and Windows, Python 3.10 and 3.12;
-- bandit and pip-audit;
-- a smoke test that builds the AppImage and the `.exe`, starts them and checks that the interface
-  answers.
-
-The release workflow runs the same checks before publishing.
-
-## Native application (C++ and Qt)
-
-ResinDeck is being rewritten as a native C++ and Qt application with a full slicer; the plan is in
-[docs/ROADMAP.md](docs/ROADMAP.md). The code:
-
-| Folder | What |
-|---|---|
-| `core/` | everything that is not user interface: printers and drivers, file formats, the shared app state (`deck`), the web server (`remote/`), network helpers (`net/`) |
-| `core/tests/` | Qt Test suites, with a fake HALOT and synthetic `.cxdlpv4` files |
-| `app/desktop/` | the window (Qt Widgets) and the GPU 3D view (QRhi) |
-| `app/cli/` | `resindeck-cli`, the command line |
-| `static/` | the web interface, served by both the Python and the C++ server |
-| `third_party/` | vendored libraries, each with a README saying where it comes from |
-
-On Linux, `build.sh` does all of it:
+ResinDeck is C++20 and Qt 6, built with CMake. On Linux, `build.sh` does all of it:
 
 ```bash
 ./build.sh setup        # first time: CMake, Ninja and Qt, without admin rights (Qt goes to ~/Qt)
@@ -159,24 +33,15 @@ On Linux, `build.sh` does all of it:
 ./build.sh              # just build, into build/release
 ```
 
-The rest of this section is what it does, for other systems or a custom setup.
-
-It needs a C++20 compiler (GCC 11+, Clang 15+ or MSVC 2022), CMake, and Qt 6.8 or newer with the WebSockets,
-HttpServer and ShaderTools modules. CI uses Qt 6.10.3: aqtinstall cannot read the Windows packages of Qt 6.11
-yet. On Linux, Qt also needs the OpenGL development files (`sudo apt install libgl-dev libegl-dev` on Debian
-and Ubuntu).
-
-Qt can be installed without admin rights with [aqtinstall](https://github.com/miurahr/aqtinstall), and
-CMake and Ninja with pip:
+By hand, or on other systems: a C++20 compiler (GCC 11+, Clang 15+ or MSVC 2022), CMake, and Qt 6.8 or
+newer with the WebSockets, HttpServer and ShaderTools modules. CI uses Qt 6.10.3: aqtinstall cannot read
+the Windows packages of Qt 6.11 yet. On Linux, Qt also needs the OpenGL development files
+(`sudo apt install libgl-dev libegl-dev` on Debian and Ubuntu). Qt installs without admin rights with
+[aqtinstall](https://github.com/miurahr/aqtinstall):
 
 ```bash
 pip install aqtinstall cmake ninja
 aqt install-qt linux desktop 6.10.3 linux_gcc_64 -O ~/Qt -m qtwebsockets qthttpserver qtshadertools
-```
-
-Build and run the tests:
-
-```bash
 cmake -B build/cpp -G Ninja -DCMAKE_PREFIX_PATH=~/Qt/6.10.3/gcc_64 -DRESINDECK_WERROR=ON
 cmake --build build/cpp
 ctest --test-dir build/cpp --output-on-failure
@@ -184,52 +49,149 @@ ctest --test-dir build/cpp --output-on-failure
 
 Add `-DRESINDECK_SANITIZE=ON` to build with AddressSanitizer and UBSan, as CI does on Linux.
 
-The build gives:
-- `build/cpp/app/desktop/resindeck`: the desktop application. It also serves the web interface for phones and
-  browsers, like the Python version. `resindeck FILE.cxdlpv4` opens a file.
-- `build/cpp/app/cli/resindeck-cli`: the command line, with the same commands and config file as
-  `resindeck.py` (`version`, `status`, `send`, `print`, `pause`, `stop`), plus `serve` for the web interface
-  without a window.
+The build gives `app/desktop/resindeck` (the window, which also serves the web interface to phones and
+browsers) and `app/cli/resindeck-cli` (the command line). Both use `~/.config/resindeck/`.
 
-Both read and write the same `~/.config/resindeck/settings.json` as the Python version, so do not run the
-two at the same time.
+## The code
 
-### Native packages
+| Folder | What |
+|---|---|
+| `core/printers/` | the driver contract (`driver.h`), the registry (`drivers.cpp`), the HALOT driver, and `Printer`, which keeps each printer connected in its own thread |
+| `core/formats/` | sliced file readers (`sliced.h` is the interface, `cxdlp.cpp` the `.cxdlpv4` reader and writer) |
+| `core/mesh/` | meshes for the 3D view: the voxel grid and the smooth surface through the layers |
+| `core/deck.*` | the app state the window and the web server share: settings, printers, library, paired devices |
+| `core/remote/` | the web server for phones and browsers, and the QR code |
+| `core/net/` | this computer's address, the ARP table (printers found by MAC address), mDNS for `resindeck.local` |
+| `core/tests/` | Qt Test suites, with a fake HALOT and synthetic `.cxdlpv4` files |
+| `app/desktop/` | the window (Qt Widgets) and the 3D view (QRhi) |
+| `app/cli/` | `resindeck-cli` |
+| `static/` | the web interface: plain JavaScript modules, three.js, `i18n.js` |
+| `third_party/` | vendored libraries, each with a README saying where it comes from |
+| `packaging/` | icon, menu entry, AppImage and Windows scripts, Windows installer |
 
-```sh
-packaging/native/build_appimage.sh   # Linux: dist/ResinDeck-<version>-x86_64.AppImage (downloads linuxdeploy)
-packaging/native/build_windows.sh    # Windows, in Git Bash: a portable .zip, and an installer with Inno Setup
+Guidelines:
+- `core/` has no user interface and is tested on its own. Keep printer and file logic there.
+- The web server listens on the network: every `/api` route and `/ws` need a PIN session unless the request
+  comes from this computer (see `Server::handle`). Settings, files on disk and pairing must call
+  `localOnly()`. See [SECURITY.md](SECURITY.md).
+- Do not commit sliced files, settings or passwords.
+
+## Adding a printer brand
+
+Each printer family is a **driver**: a subclass of `Driver` ([`core/printers/driver.h`](core/printers/driver.h))
+listed in [`core/printers/drivers.cpp`](core/printers/drivers.cpp). The window, the web server and the
+command line only talk to that contract, so a new brand touches no other file.
+[`core/printers/halot.cpp`](core/printers/halot.cpp) is a complete example.
+
+### 1. Write the driver
+
+```cpp
+class MyBrandDriver : public Driver {
+public:
+    MyBrandDriver(const QString &host, QString password) : Driver(host, std::move(password)) {}
+
+    static const DriverInfo &driverInfo() {
+        static const DriverInfo info{
+            .id = "mybrand",              // stored in settings.json, never change it later
+            .name = "MyBrand",            // shown in the interface
+            .models = "Model X (tested)",
+            .extensions = {".goo"},       // files the printer accepts, lower case
+            .password = false,            // true if status and commands need the printer password
+            .passwordMax = 0,             // longest password the printer accepts (0: no limit)
+        };
+        return info;
+    }
+    const DriverInfo &info() const override { return driverInfo(); }
+
+    void connect() override;              // open the connection; set version_ if you can
+    void close() override;
+    void ping() override;                 // cheap "still there?" check, without a password
+    Status status() override;             // state, file, layer, layers, remaining, code, raw
+    QJsonObject upload(const QString &path, const Progress &progress) override;  // call progress(percent)
+    QJsonObject start(const QString &filename) override;
+    QJsonObject pause() override;
+    QJsonObject resume() override;
+    QJsonObject stop() override;
+    void abort() override;                // optional: make a waiting call fail now (app closing)
+
+    static bool probe(const QString &host, int timeoutMs);  // "is one of my printers here?"
+};
 ```
 
-CI builds both on every pull request (job `native-packages`), starts each one and keeps them as artifacts.
-They are not released yet: the release workflow still publishes the Python version.
+Rules of the contract:
+- **Blocking calls:** each method waits for the printer's answer. Every printer runs in its own thread, so
+  plain step-by-step code is fine. To wait for network replies, run a `QEventLoop` with a timeout, as
+  `Halot::receive` does.
+- **Status:** translate the printer's state into one of the states in `status.h` (`Idle`, `Printing`,
+  `Paused`, `Finished`…). Put the printer's own name for it in `code` and its full reply in `raw`. Anything
+  you cannot map becomes `Unknown`, and the interface shows `code`.
+- **Errors:** throw `PrinterError(message, code, params)` for problems the user can fix (wrong password,
+  file refused), and `NetworkError` when the connection fails: ResinDeck shows the printer as offline and
+  reconnects. Add every new `code` to `static/i18n.js` as `errors.<code>`, in English and Portuguese.
+- **probe()** runs for every address on the network, many at once. Keep it around a second and never send
+  anything that changes the printer.
+- `host_` is the address the user typed (it may end in `:port`) and `password_` the password.
 
-## Desktop packages and releases
+### 2. Register it
 
-The AppImage and the Windows `.exe` are built with PyInstaller from `desktop.py`
-(`packaging/resindeck.spec`).
+Add an entry to `driverTypes()` in [`core/printers/drivers.cpp`](core/printers/drivers.cpp). It then shows
+up in **+ add**, in the network search and in `resindeck-cli --driver mybrand`.
+
+### 3. Test it without the printer
+
+Write a fake printer that speaks your protocol, like [`core/tests/fakeprinter.h`](core/tests/fakeprinter.h)
+does for the HALOT, and test the driver against it, like `core/tests/test_halot_driver.cpp`. The tests then
+run in CI and nobody needs your printer to change the code safely. `everyDriverFillsInItsInfo` checks every
+registered driver. Then try it on the real printer and say in the pull request which model and firmware you
+used.
+
+Please also document the protocol, as [docs/PROTOCOL.md](docs/PROTOCOL.md) does for the HALOT.
+
+### Another file format
+
+If the printer uses another sliced format, add a subclass of `SlicedFile`
+([`core/formats/sliced.h`](core/formats/sliced.h)): header info, thumbnails and layer images. The 3D view
+and the web interface work from those. Register its extensions in `loadSliced()` and `slicedExtensions()`.
+[`core/formats/cxdlp.cpp`](core/formats/cxdlp.cpp) is the reference, and its `Writer` shows how to build
+test files.
+
+## Tests
+
+The tests need no printer and no sliced files: `core/tests/fakeprinter.h` is a fake HALOT that speaks the
+network protocol (including the error cases), and `cxdlp::Writer` writes small synthetic `.cxdlpv4` files.
+Add a test with every change.
+
+Every pull request runs `.github/workflows/ci.yml`:
+- lint (JavaScript and shell syntax);
+- build with warnings as errors and the tests on Linux (with AddressSanitizer and UBSan) and Windows;
+- the packages: it builds the AppImage and the Windows installer, starts them and checks that the web
+  interface answers.
+
+## Packages and releases
 
 ```sh
-uv pip install --python .venv/bin/python -r requirements-desktop.txt
-packaging/build_appimage.sh        # Linux: dist/ResinDeck-<version>-x86_64.AppImage
+packaging/build_appimage.sh   # Linux: dist/ResinDeck-<version>-x86_64.AppImage (downloads linuxdeploy)
+packaging/build_windows.sh    # Windows, in Git Bash: a portable .zip, and an installer with Inno Setup
 ```
 
-The `.exe` has to be built on Windows: `python -m PyInstaller packaging/resindeck.spec`.
-
-To publish a release, bump `__version__` in `resindeck.py`, commit, then push a matching tag:
+To publish a release, set the version in `project(ResinDeck VERSION …)` in `CMakeLists.txt`, merge, then
+push a matching tag:
 
 ```sh
-git tag v0.2.0 && git push origin v0.2.0
+git tag v1.0.1 && git push origin v1.0.1
 ```
 
-The `Release` workflow builds both packages and attaches them to a GitHub release with generated
-notes. Run `packaging/make_icon.py` after changing the icon.
+The `Release` workflow runs CI, which builds and checks the packages, and attaches them to a GitHub release.
+Run `packaging/make_icon.py` after changing the icon.
+
+The Python version (0.x) is kept in the `legacy` branch and no longer maintained.
 
 ## Translations
 
-UI strings live in `static/i18n.js`. To add a language, copy the `en` block, give it a language
-tag (for example `"es"`), translate the values and keep the keys. Missing keys fall back to
-English. Add a short label for it in `initLanguage()` in `static/app.js`.
+The strings of the window and of the web interface both live in `static/i18n.js`. To add a language, copy
+the `en` block, give it a language tag (for example `"es"`), translate the values and keep the keys.
+Missing keys fall back to English. The window picks the new language up on its own; for the web interface,
+add a short label for it in `initLanguage()` in `static/app.js`.
 
-Messages from the server reach the interface with an error `code`, so they are translated through
-the `errors.*` keys too. Command line output stays in English.
+Errors reach both interfaces with a `code`, so they are translated through the `errors.*` keys too. The
+command line stays in English.

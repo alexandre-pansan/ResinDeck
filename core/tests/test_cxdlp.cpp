@@ -1,4 +1,4 @@
-// .cxdlpv4 reading and writing. Ported from tests/test_cxdlp.py.
+// .cxdlpv4 reading and writing. Ported from the Python version's tests/test_cxdlp.py (legacy branch).
 #include "formats/cxdlp.h"
 #include "formats/sliced.h"
 
@@ -11,7 +11,7 @@ using namespace resindeck;
 
 namespace {
 
-// A box at the plate centre that gets one pixel wider every layer (as tests/cxdlp_writer.py).
+// A box at the plate centre that gets one pixel wider every layer (as the Python version's tests/cxdlp_writer.py).
 std::vector<QImage> layerImages(int resX = 60, int resY = 40, int count = 12) {
     std::vector<QImage> images;
     for (int n = 0; n < count; ++n) {

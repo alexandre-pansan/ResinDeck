@@ -4,7 +4,7 @@
 #   dist/ResinDeck-<version>-windows-x64-setup.exe  (installer, when Inno Setup's iscc is on PATH)
 # Needs CMake, Visual Studio 2022 and Qt for MSVC; QT_DIR points at Qt (e.g. C:/Qt/6.10.3/msvc2022_64).
 set -eu
-cd "$(dirname "$0")/../.."
+cd "$(dirname "$0")/.."
 QT_DIR=${QT_DIR:?set QT_DIR to the Qt folder, e.g. C:/Qt/6.10.3/msvc2022_64}
 VERSION=$(sed -n 's/^project(ResinDeck VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
 BUILD=build/windows-release
@@ -23,6 +23,6 @@ mkdir -p dist
 rm -f "dist/ResinDeck-$VERSION-windows-x64.zip"
 (cd build/windows && powershell -NoProfile -Command "Compress-Archive -Path ResinDeck -DestinationPath ../../dist/ResinDeck-$VERSION-windows-x64.zip")
 if command -v iscc >/dev/null 2>&1; then
-    iscc "/DVersion=$VERSION" packaging/native/resindeck.iss
+    iscc "/DVersion=$VERSION" packaging/resindeck.iss
 fi
 ls dist

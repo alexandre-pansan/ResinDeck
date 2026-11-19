@@ -1,5 +1,5 @@
-; Windows installer for the native application (Inno Setup 6). Built by packaging/native/build_windows.sh
-; from the folder windeployqt fills: iscc /DVersion=x.y.z packaging\native\resindeck.iss
+; Windows installer for the native application (Inno Setup 6). Built by packaging/build_windows.sh
+; from the folder windeployqt fills: iscc /DVersion=x.y.z packaging\resindeck.iss
 #ifndef Version
   #define Version "0.0.0"
 #endif
@@ -15,9 +15,9 @@ DisableProgramGroupPage=yes
 PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-OutputDir=..\..\dist
+OutputDir=..\dist
 OutputBaseFilename=ResinDeck-{#Version}-windows-x64-setup
-SetupIconFile=..\icon.ico
+SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\resindeck.exe
 Compression=lzma2
 SolidCompression=yes
@@ -27,7 +27,7 @@ WizardStyle=modern
 Name: desktopicon; Description: "{cm:CreateDesktopIcon}"; Flags: unchecked
 
 [Files]
-Source: "..\..\build\windows\ResinDeck\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "..\build\windows\ResinDeck\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 Name: "{group}\ResinDeck"; Filename: "{app}\resindeck.exe"

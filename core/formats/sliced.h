@@ -46,7 +46,7 @@ public:
 
     virtual ~SlicedFile() = default;
 
-    // Header values shown in the interface (the same keys as the Python version).
+    // Header values shown in the interface (the keys the web interface reads).
     virtual QJsonObject info() const = 0;
     virtual int width() const = 0;     // layer resolution in pixels
     virtual int height() const = 0;

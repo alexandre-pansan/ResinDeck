@@ -9,7 +9,7 @@ Q_DECLARE_METATYPE(resindeck::State)
 class TestHalot : public QObject {
     Q_OBJECT
 private slots:
-    // Reference values from the Python version (drivers/halot.py), which the printer accepts.
+    // Reference values from the Python version (drivers/halot.py, legacy branch), which the printer accepts.
     void tokenMatchesThePythonVersion_data() {
         QTest::addColumn<QString>("password");
         QTest::addColumn<QString>("withLowerKey");

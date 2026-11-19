@@ -1,4 +1,4 @@
-// resindeck-cli run as a separate process against the fake printer. Ported from tests/test_cli.py.
+// resindeck-cli run as a separate process against the fake printer. Ported from the Python version's tests/test_cli.py (legacy branch).
 #include "fakeprinter.h"
 
 #include <QDir>

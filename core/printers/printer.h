@@ -1,5 +1,5 @@
 // Keeps a connection to one printer through its driver, polls its status and runs commands.
-// The C++ version of server.py's Printer.
+// Ported from Printer in the Python version's server.py (legacy branch).
 //
 // Each Printer has its own thread, where the driver lives. Everything that talks to the printer runs
 // there, one thing at a time, in order. The public methods can be called from any thread: getters
@@ -48,7 +48,7 @@ public:
     bool online() const;
     std::optional<Status> status() const;
     QString error() const;  // error code, empty when fine
-    // For the web interface: the same fields as the Python version's Printer.public().
+    // The fields the web interface reads.
     QJsonObject toJson() const;
 
     // start(filename), pause(), resume() or stop(), then a status update.

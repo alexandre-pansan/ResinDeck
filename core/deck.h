@@ -32,7 +32,7 @@ private:
     int status_;
 };
 
-// ~/.config/resindeck/settings.json, shared with the Python version.
+// ~/.config/resindeck/settings.json, the same file the Python version (legacy branch) used.
 QString defaultSettingsPath();
 QString defaultCacheDir();  // ~/.cache/resindeck
 QString newPin();           // six random digits

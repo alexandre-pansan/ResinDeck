@@ -1,4 +1,4 @@
-// The web interface's HTTP and WebSocket server: the same API as the Python version (server.py),
+// The web interface's HTTP and WebSocket server: the same API the Python version had (server.py in the legacy branch),
 // so the browser and phone interface in web/ works unchanged.
 //
 // It listens on the local network so a phone can follow the print: this computer has full access,

@@ -1,4 +1,4 @@
-// The HALOT protocol and driver against the fake printer. Ported from tests/test_halot.py.
+// The HALOT protocol and driver against the fake printer. Ported from the Python version's tests/test_halot.py (legacy branch).
 #include "fakeprinter.h"
 #include "printers/drivers.h"
 #include "printers/halot.h"

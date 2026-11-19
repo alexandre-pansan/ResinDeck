@@ -1,4 +1,4 @@
-// The command line's config file, shared with the Python version:
+// The command line's config file, the same file the Python version (legacy branch) used:
 // ~/.config/resindeck/config with HOST=..., PASSWORD=..., DRIVER=... lines.
 #pragma once
 

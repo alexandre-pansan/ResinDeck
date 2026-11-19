@@ -1,7 +1,7 @@
 """Draws the ResinDeck icon: a stack of cured layers above a resin vat.
 
 Writes packaging/icon.png (512 px), packaging/icon.ico (Windows) and static/favicon.png.
-Run: .venv/bin/python packaging/make_icon.py
+Run: python3 packaging/make_icon.py  (needs Pillow: pip install pillow)
 """
 from pathlib import Path
 

@@ -80,12 +80,12 @@ Each phase ends with a release, and with a real print on a HALOT-R6 once slicing
 Everything the Python version does, in C++.
 
 - [x] CMake project with Qt 6; CI that builds on Linux and Windows and runs the tests
-- [ ] `core/printers`: driver contract, normalized status, HALOT driver (token, WebSocket, compressed upload, start, pause, resume, stop, probe)
+- [x] `core/printers`: driver contract, normalized status, HALOT driver (token, WebSocket, compressed upload, start, pause, resume, stop, probe)
   - [x] normalized status and printer errors
   - [x] HALOT token (DES) and status parsing, checked against the Python version
   - [x] driver contract and registry; WebSocket connection, upload and commands, probe; tested against a fake HALOT
   - [x] checked on a real HALOT-R6: version, status and probe (read only)
-  - [ ] upload and print commands on a real HALOT-R6
+  - [x] upload, print, pause, resume and stop on a real HALOT-R6
 - [x] Printer manager: one thread per printer, polling, reconnection, commands and uploads (`core/printers/printer`)
 - [x] Printer tracking by MAC address after DHCP changes; network scan (`core/net/lan`)
 - [x] Print start and expected end times
@@ -96,14 +96,13 @@ Everything the Python version does, in C++.
 - [x] Command line, like today's `resindeck.py` (`resindeck-cli`)
 - [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`, Inno Setup)
   - [x] install rules, packaging scripts and a CI job that builds and starts both
-  - [ ] first successful CI run; tested on a real Windows machine
+  - [ ] first successful CI run
+  - [ ] tested on a real Windows machine
 - [x] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
 
-**Result:** ResinDeck 1.0, native. It does everything 0.3 does.
+**Result:** ResinDeck 1.0, native. It does everything 0.3 does. **Released.**
 
-Before releasing 1.0: run the Python and the native version side by side for a while, with real prints
-(upload, start, pause and stop are only tested against the fake printer so far), then move the Python code
-to a `legacy` branch and switch the release workflow to the native packages.
+The Python code moved to the `legacy` branch, and the release workflow publishes the native packages.
 
 ### Phase 1: slice and print
 

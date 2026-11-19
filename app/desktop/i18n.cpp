@@ -98,8 +98,9 @@ QString errorText(std::exception_ptr error) {
         return errorText("comm_failure", {{"detail", QString::fromUtf8(e.what())}});
     } catch (const std::exception &e) {
         return QString::fromUtf8(e.what());
+    } catch (...) {
+        return {};
     }
-    return {};
 }
 
 }  // namespace resindeck::ui

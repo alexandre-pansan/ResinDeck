@@ -11,19 +11,23 @@ para outras marcas e sistemas com a ajuda da comunidade.
 
 [Read in English](README.md)
 
-- **Interface web** (roda localmente, abre no navegador):
-  - visualização 3D montada a partir das camadas do arquivo fatiado
-  - visualizador camada por camada e a miniatura do fatiador
-  - gerenciador de impressoras: várias impressoras, busca na rede, status ao vivo
-  - enviar, enviar e imprimir, pausar/retomar, parar, com progresso por camada e tempo restante
-- **Linha de comando** para scripts e tarefas rápidas.
-- Lê arquivos `.cxdlpv4`, o formato que o HALOT BOX exporta para impressoras HALOT.
+- **Programa para Linux e Windows:**
+  - visualização 3D montada a partir das camadas do arquivo fatiado, desenhada pela placa de vídeo, suave e
+    detalhada até o pixel, com corte em qualquer camada
+  - visualizador camada por camada e a miniatura do fatiador, tempo de impressão, resina e exposição
+  - gerenciador de impressoras: várias impressoras, busca na rede, status ao vivo com camada, tempo
+    restante, hora de início e término previsto
+  - enviar, enviar e imprimir, pausar/retomar, parar, com o progresso do envio
+- **Acesso pelo celular e pelo navegador** na sua rede, com QR code e PIN, para acompanhar e controlar a
+  impressão.
+- **Linha de comando** (`resindeck-cli`) para scripts e tarefas rápidas.
+- Lê arquivos `.cxdlpv4`, o formato que o HALOT BOX e o Chitubox exportam para impressoras HALOT.
 
 ## Impressoras suportadas
 
 | Impressora | Situação |
 |---|---|
-| Creality HALOT-R6 | testada: status, envio, imprimir (pausar e parar ainda sem confirmação) |
+| Creality HALOT-R6 | testada: status, envio, imprimir, pausar, retomar, parar |
 | Outros modelos Creality HALOT | mesmo protocolo até onde sabemos, sem teste; relatos são bem-vindos |
 | Outras marcas | ainda não; veja o [CONTRIBUTING.md](CONTRIBUTING.md) para ajudar a adicionar |
 
@@ -38,64 +42,53 @@ Baixe a versão mais recente na [página de Releases](https://github.com/alexand
 
 - **Linux:** `ResinDeck-<versão>-x86_64.AppImage`. Torne o arquivo executável (`chmod +x`, ou nas
   propriedades do gerenciador de arquivos) e abra.
-- **Windows:** `ResinDeck-<versão>-windows-x64.exe`. O arquivo ainda não é assinado, então o
-  SmartScreen do Windows pode avisar: clique em **Mais informações** → **Executar assim mesmo**.
+- **Windows:** `ResinDeck-<versão>-windows-x64-setup.exe` instala com atalho no menu Iniciar, ou
+  `ResinDeck-<versão>-windows-x64.zip` roda sem instalar (descompacte e abra o `resindeck.exe`). Os arquivos
+  ainda não são assinados, então o SmartScreen do Windows pode avisar: clique em **Mais informações** →
+  **Executar assim mesmo**. Permita o ResinDeck quando o firewall perguntar, para o celular conseguir
+  conectar.
 
-O app roda em segundo plano, com um ícone na bandeja do sistema, e abre a interface no navegador.
-Clicar no ícone abre a interface de novo; **Encerrar**, no topo da interface, fecha o ResinDeck. No
-Linux, o ícone da bandeja não tem menu, e no GNOME ele precisa da extensão AppIndicator, que já vem
-no Ubuntu.
+## Compilar a partir do código
 
-## Instalação a partir do código
-
-Precisa de Python 3.10+ e da impressora na mesma rede que o computador.
+No Linux:
 
 ```sh
 git clone https://github.com/alexandre-pansan/ResinDeck.git
 cd ResinDeck
-./start.sh
+./build.sh setup   # só na primeira vez: CMake, Ninja e Qt, sem precisar de admin
+./build.sh run     # compila e abre o ResinDeck
 ```
 
-Na primeira execução, o `start.sh` cria um virtualenv em `.venv` (com o
-[uv](https://docs.astral.sh/uv/), se você tiver, ou com `python3 -m venv`), instala as dependências
-e abre a interface em <http://127.0.0.1:8765/>.
+O Qt precisa dos arquivos de desenvolvimento do OpenGL: `sudo apt install libgl-dev libegl-dev` no Debian e
+no Ubuntu. Outros sistemas e detalhes no [CONTRIBUTING.md](CONTRIBUTING.md#building) (em inglês).
 
-Para fazer na mão:
-
-```sh
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python resindeck.py ui
-```
-
-## Usando a interface
+## Usando o ResinDeck
 
 1. **Adicione a impressora**: clique em **+ adicionar**, digite o IP (ou use **Procurar na rede**)
    e a senha de rede mostrada na tela da impressora.
-2. **Configure a pasta da biblioteca**: clique em **pastas** e informe a pasta onde ficam seus
-   `.cxdlpv4`. Também dá para soltar arquivos na janela.
+2. **Configure a pasta da biblioteca**: clique em **pastas** e escolha a pasta onde ficam seus
+   `.cxdlpv4`. Também dá para soltar arquivos na janela, ou abrir um com o ResinDeck pelo gerenciador de
+   arquivos.
 3. **Escolha um arquivo** para ver em 3D, navegar pelas camadas e conferir tempo de impressão,
-   resina e exposição.
-4. **Enviar** ou **Enviar e imprimir**. Durante a impressão, o cartão da impressora mostra a
-   camada, o progresso e o tempo restante; **Acompanhar** mostra no 3D até onde a impressão chegou.
+   resina e exposição. Arraste para girar o modelo, arraste com o botão direito para mover, use a rodinha
+   para o zoom e clique duas vezes para voltar à vista inicial.
+4. **Enviar** ou **Enviar e imprimir**. Durante a impressão, o cartão da impressora mostra a camada, o
+   tempo restante, a hora em que começou e quando deve terminar.
 
-A interface está em inglês e português, escolhido pelo idioma do navegador (dá para trocar no
-canto superior direito).
-
+A janela está em inglês e português, escolhido pelo idioma do sistema (dá para trocar no topo).
 Tudo funciona sem internet, inclusive a visualização 3D.
 
 ### Acompanhar a impressão pelo celular
 
-Com o celular no mesmo Wi-Fi, clique em **Celular** no topo e aponte a câmera para o QR code (ou
-abra <http://resindeck.local:8765/>), depois digite o PIN de 6 dígitos que aparece ali. O celular vê a
-interface completa: progresso, visualização 3D, pausar e parar.
+Com o ResinDeck aberto, celulares e outros computadores no mesmo Wi-Fi acompanham a impressão pelo navegador.
+Clique em **Celular** no topo e aponte a câmera para o QR code (ou abra <http://resindeck.local:8765/>),
+depois digite o PIN de 6 dígitos que aparece ali. O celular vê o progresso e o 3D, e pode pausar e parar.
 
 - Só o computador que roda o ResinDeck entra sem PIN, por qualquer um dos seus endereços. A mesma
   janela lista os aparelhos conectados: desconecte um, ou clique em **novo PIN** para desconectar
   todos.
 - O `resindeck.local` depende de mDNS: funciona no iPhone, Windows, macOS e Linux, mas não em
   alguns Androids: nesses, abra o endereço IP que aparece embaixo do QR code.
-- No Windows, permita o ResinDeck quando o firewall perguntar na primeira execução.
 - As configurações das impressoras e as pastas da biblioteca só podem ser mudadas no computador.
 - Para deixar o ResinDeck acessível só neste computador, inicie com `RESINDECK_LAN=0`. Mais detalhes
   no [SECURITY.md](SECURITY.md) (em inglês).
@@ -103,27 +96,28 @@ interface completa: progresso, visualização 3D, pausar e parar.
 ## Linha de comando
 
 ```sh
-resindeck version                       # versão do firmware, testa a conexão
-resindeck status                        # estado da impressão
-resindeck send peca.cxdlpv4             # só envia
-resindeck send peca.cxdlpv4 --print     # envia e imprime (pede confirmação)
-resindeck print peca.cxdlpv4            # imprime um arquivo que já está na impressora
-resindeck pause                         # pausa / retoma
-resindeck stop                          # cancela a impressão
-resindeck ui                            # interface web (também é o padrão sem comando)
+resindeck-cli version                       # versão do firmware, testa a conexão
+resindeck-cli status                        # estado da impressão
+resindeck-cli send peca.cxdlpv4             # só envia
+resindeck-cli send peca.cxdlpv4 --print     # envia e imprime (pede confirmação)
+resindeck-cli print peca.cxdlpv4            # imprime um arquivo que já está na impressora
+resindeck-cli pause                         # pausa / retoma
+resindeck-cli stop                          # cancela a impressão
+resindeck-cli serve                         # a interface do celular e do navegador, sem a janela
 ```
 
-Rode como `.venv/bin/python resindeck.py ...`, ou crie um script `resindeck` no seu `PATH`.
+Ele fica ao lado do `resindeck` no AppImage (use `--appimage-extract` para tirá-lo de lá) e na pasta do
+Windows, e em `build/release/app/cli/` quando compilado a partir do código.
 
 ## Configuração
 
 | O quê | Onde |
 |---|---|
-| Configurações da interface (impressoras, senhas, pastas) | `~/.config/resindeck/settings.json`, permissão 600, editado pela interface |
+| Impressoras, senhas, pastas da biblioteca, celulares pareados | `~/.config/resindeck/settings.json`, permissão 600, editado pela janela |
 | Impressora da linha de comando | `~/.config/resindeck/config` (veja `config.example`), ou as variáveis `RESINDECK_HOST` / `RESINDECK_PASSWORD` / `RESINDECK_DRIVER` |
 | Cache da visualização 3D | `~/.cache/resindeck/` |
 
-Na primeira execução, a interface importa a impressora da configuração da linha de comando.
+Na primeira execução, o ResinDeck importa a impressora da configuração da linha de comando.
 
 Não é preciso fixar o IP da impressora. O ResinDeck guarda o endereço MAC dela, e quando ela para de
 responder, procura esse MAC na rede e atualiza o IP sozinho. Isso funciona com a impressora e o
@@ -138,27 +132,31 @@ impressora, mas elas dão erro de token, inclusive no HALOT BOX.
   defina uma nova lá.
 - **"A impressora ainda está recebendo outro arquivo"**: um envio anterior ficou pela metade. Feche
   outros programas conectados à impressora (incluindo outro ResinDeck) ou reinicie a impressora.
+- **"A porta 8765 está em uso"**: outro ResinDeck já está aberto. A janela funciona, mas o celular conecta
+  no outro.
 - **Impressora aparece offline**: confira o IP e se a porta 18188 está acessível a partir do
   computador.
 
 ## Como funciona
 
-Cada família de impressora é um driver em `drivers/`, então adicionar uma marca é escrever um único
-módulo. Veja [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand) (em inglês).
+O ResinDeck é escrito em C++ com Qt. Cada família de impressora é um driver, então adicionar uma marca é
+escrever uma única classe; veja [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand) (em
+inglês). O 3D extrai uma superfície das próprias imagens das camadas, usando o antialiasing delas para
+posicionar as bordas entre os pixels.
 
 O protocolo da HALOT é um WebSocket na porta 18188 com comandos JSON e um token baseado em DES; os envios
 vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 [docs/PROTOCOL.md](docs/PROTOCOL.md) (em inglês).
 
-| Arquivo | O que faz |
+| Pasta | O que faz |
 |---|---|
-| `resindeck.py` | linha de comando e ponto de entrada |
-| `drivers/` | um módulo por família de impressora. `base.py` é o contrato, `halot.py` o driver das Creality HALOT |
-| `formats/` | leitores de arquivos fatiados. `cxdlp.py` lê `.cxdlpv4`: cabeçalho, miniaturas, camadas, voxels do 3D |
-| `server.py` | servidor web local (aiohttp): biblioteca, visualizações, conexões com as impressoras |
-| `desktop.py` | ponto de entrada do app desktop: servidor em segundo plano e ícone na bandeja |
-| `static/` | interface web (JavaScript puro, three.js no 3D, `i18n.js` com as traduções) |
-| `packaging/` | ícone, receita do PyInstaller e script do AppImage |
+| `core/` | impressoras e drivers, formatos de arquivo, malhas 3D, o servidor web do celular, rede, com testes |
+| `app/desktop/` | a janela (Qt Widgets) e o 3D na placa de vídeo |
+| `app/cli/` | a linha de comando |
+| `static/` | a interface do celular e do navegador (JavaScript puro, three.js, `i18n.js` com as traduções) |
+| `packaging/` | ícone e os pacotes do Linux e do Windows |
+
+A versão 0.x era em Python; ela fica guardada na branch `legacy`.
 
 ## Contribuindo
 
@@ -167,22 +165,20 @@ Relatos de bugs, testes com outros modelos HALOT e traduções são muito bem-vi
 
 ## Próximos passos
 
-O ResinDeck vai virar um programa nativo em C++ e Qt, com um fatiador de resina completo: ocar, suportes,
-fatiar e imprimir num lugar só. A interface no navegador e no celular continua. As fases estão no
-[docs/ROADMAP.md](docs/ROADMAP.md) (em inglês).
-
-A primeira fase já está pronta neste repositório, mas ainda não foi lançada: uma janela nativa com o 3D na
-placa de vídeo, as impressoras, a biblioteca e o pareamento do celular, fazendo tudo o que a versão em Python
-faz. Para testar no Linux, rode `./build.sh setup` uma vez e depois
-`./build.sh run`. Mais detalhes em [Native application](CONTRIBUTING.md#native-application-c-and-qt) (em inglês).
+O ResinDeck vai virar um fatiador de resina completo: abrir modelos, ocar, suportes, fatiar e imprimir num
+lugar só. As fases estão no [docs/ROADMAP.md](docs/ROADMAP.md) (em inglês).
 
 ## Créditos
 
 - [HalotMageProSharp](https://github.com/mrtska/HalotMageProSharp), de mrtska (MIT): base do
   protocolo de rede e do algoritmo do token.
 - [UVtools](https://github.com/sn4k3/UVtools), de Tiago Conceição: documentação do formato
-  `.cxdlpv4`. O ResinDeck tem implementação própria em Python e não contém código do UVtools.
-- [three.js](https://threejs.org/) (MIT) para a visualização 3D, incluído em `static/vendor/three/`.
+  `.cxdlpv4`. O ResinDeck tem implementação própria e não contém código do UVtools.
+- [Qt](https://www.qt.io/) (LGPL 3) para a janela, a rede e o 3D.
+- [QR Code generator library](https://www.nayuki.io/page/qr-code-generator-library), do Project Nayuki (MIT),
+  em `third_party/qrcodegen/`.
+- [three.js](https://threejs.org/) (MIT) para o 3D da interface do celular e do navegador, incluído em
+  `static/vendor/three/`.
 
 ## Licença
 

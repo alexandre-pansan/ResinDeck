@@ -4,7 +4,7 @@
 #   cmake --build build/cpp
 #   ctest --test-dir build/cpp --output-on-failure
 cmake_minimum_required(VERSION 3.21)
-project(ResinDeck VERSION 0.3.1 LANGUAGES CXX)
+project(ResinDeck VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -35,7 +35,7 @@ add_subdirectory(app/cli)
 add_subdirectory(app/desktop)
 add_subdirectory(core/tests)
 
-# --- install: the layout packages are made from (see packaging/native/) ---
+# --- install: the layout packages are made from (see packaging/) ---
 include(GNUInstallDirs)
 install(TARGETS resindeck resindeck-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} BUNDLE DESTINATION .)
 if(WIN32)
@@ -43,6 +43,6 @@ if(WIN32)
   install(DIRECTORY static/ DESTINATION ${CMAKE_INSTALL_BINDIR}/web)
 else()
   install(DIRECTORY static/ DESTINATION ${CMAKE_INSTALL_DATADIR}/resindeck/web)
-  install(FILES packaging/native/resindeck.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES packaging/resindeck.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
   install(FILES packaging/icon.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps RENAME resindeck.png)
 endif()

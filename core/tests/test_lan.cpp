@@ -1,4 +1,4 @@
-// ARP parsing and network helpers. Ported from tests/test_lan.py.
+// ARP parsing and network helpers. Ported from the Python version's tests/test_lan.py (legacy branch).
 #include "net/lan.h"
 
 #include <QHostAddress>

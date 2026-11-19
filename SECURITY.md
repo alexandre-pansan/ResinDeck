@@ -38,6 +38,8 @@ How:
 
 To keep ResinDeck reachable from this computer only, start it with `RESINDECK_LAN=0`.
 
+The Python version (0.x, kept in the `legacy` branch) gets no more fixes; use 1.0 or later.
+
 ## Known limits
 
 - The interface uses plain HTTP on the local network. Someone who can watch your Wi-Fi traffic can
@@ -48,6 +50,8 @@ To keep ResinDeck reachable from this computer only, start it with `RESINDECK_LA
 
 ## Automated checks
 
-Every pull request runs the tests, [bandit](https://bandit.readthedocs.io/) (static analysis) and
-[pip-audit](https://pypi.org/project/pip-audit/) (known vulnerabilities in dependencies).
-Dependabot opens weekly updates for dependencies and GitHub Actions.
+Every pull request builds with compiler warnings as errors and runs the tests, on Linux under
+AddressSanitizer and UBSan (memory and undefined-behaviour errors). The tests cover the checks above:
+PIN, rate limit, sessions, computer-only actions, Origin and Host checks, headers and file paths.
+Dependabot opens weekly updates for GitHub Actions. Qt and the vendored library in `third_party/` are
+updated by hand.
