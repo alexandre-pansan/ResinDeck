@@ -66,6 +66,10 @@ public:
     Voxels voxels(int step = 6, const Progress &progress = {}) const;
 };
 
+// The 3D view's payload as Deck::voxels() builds it (uint32 meta length, JSON meta, packed bits),
+// back into a grid. Empty for an empty or malformed payload.
+Voxels decodeVoxels(const QByteArray &payload);
+
 // The extensions with a reader, lower case: {".cxdlpv4", ".cxdlp"}.
 QStringList slicedExtensions();
 bool isSlicedFile(const QString &path);

@@ -14,7 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(RESINDECK_WERROR "Treat compiler warnings as errors" OFF)
 option(RESINDECK_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Concurrent Gui HttpServer Network WebSockets Test)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Concurrent Gui HttpServer Network ShaderTools WebSockets Widgets Test)
 qt_standard_project_setup()
 
 add_library(resindeck_warnings INTERFACE)
@@ -29,8 +29,8 @@ else()
   endif()
 endif()
 
+enable_testing()
 add_subdirectory(core)
 add_subdirectory(app/cli)
-
-enable_testing()
+add_subdirectory(app/desktop)
 add_subdirectory(core/tests)

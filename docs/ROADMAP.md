@@ -90,7 +90,7 @@ Everything the Python version does, in C++.
 - [x] Printer tracking by MAC address after DHCP changes; network scan (`core/net/lan`)
 - [x] Print start and expected end times
 - [x] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D grid from layers; identical to the Python reader on 27 real files, about 3× faster
-- [ ] Main window: printers, library, file info, 3D preview, send and print
+- [x] Main window (Qt Widgets): printers, library, file info, 3D preview on the GPU, layers, send and print, phone pairing; strings shared with the web interface
 - [x] `core/remote`: the current HTTP and WebSocket API, serving the web interface; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints. Same answers as the Python server, endpoint by endpoint
 - [x] `resindeck.local` over mDNS; QR code
 - [x] Command line, like today's `resindeck.py` (`resindeck-cli`)

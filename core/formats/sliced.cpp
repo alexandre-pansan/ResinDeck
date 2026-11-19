@@ -3,6 +3,9 @@
 #include "formats/cxdlp.h"
 
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QtEndian>
 
 #include <algorithm>
 #include <cmath>
@@ -56,6 +59,32 @@ Voxels SlicedFile::voxels(int step, const Progress &progress) const {
     v.voxel = {step * px, step * py, k * layerHeight()};
     v.origin = {lo[2] * step * px, lo[1] * step * py, lo[0] * k * layerHeight()};
     v.layersPerVoxel = k;
+    return v;
+}
+
+Voxels decodeVoxels(const QByteArray &payload) {
+    Voxels v;
+    if (payload.size() < 4) return v;
+    const auto metaSize = static_cast<qsizetype>(qFromLittleEndian<quint32>(payload.constData()));
+    if (4 + metaSize > payload.size()) return v;
+    const QJsonObject meta = QJsonDocument::fromJson(payload.mid(4, metaSize)).object();
+    const QJsonArray shape = meta.value("shape").toArray();
+    if (shape.size() != 3) return v;
+    auto triple = [&](const char *key) {
+        const QJsonArray a = meta.value(key).toArray();
+        return std::array<double, 3>{a.at(0).toDouble(), a.at(1).toDouble(), a.at(2).toDouble()};
+    };
+    v.shape = {shape[0].toInt(), shape[1].toInt(), shape[2].toInt()};
+    v.voxel = triple("voxel");
+    v.origin = triple("origin");
+    v.bed = triple("bed");
+    v.layersPerVoxel = meta.value("layersPerVoxel").toInt(1);
+    const std::size_t n = static_cast<std::size_t>(v.shape[0]) * static_cast<std::size_t>(v.shape[1]) * static_cast<std::size_t>(v.shape[2]);
+    const QByteArray bits = payload.mid(4 + metaSize);
+    if (static_cast<std::size_t>(bits.size()) * 8 < n) return {};
+    v.cells.resize(n);
+    for (std::size_t i = 0; i < n; ++i)
+        v.cells[i] = (static_cast<quint8>(bits[static_cast<qsizetype>(i / 8)]) >> (7 - i % 8)) & 1;
     return v;
 }
 

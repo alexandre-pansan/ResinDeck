@@ -48,6 +48,9 @@ public:
     // Addresses a phone can open, resindeck.local first when it is announced.
     QStringList remoteUrls() const;
 
+    // Paired devices with a live connection, by device id.
+    QSet<QString> onlineDevices() const;
+
     // Whether a request comes from this computer. Tests replace it to act as another device.
     std::function<bool(const QHostAddress &, const QHttpHeaders &)> isLocal;
 
@@ -80,7 +83,6 @@ private:
 
     void onWebSocket();
     void broadcast(const QJsonObject &message, bool localOnly = false);
-    QSet<QString> onlineDevices() const;
 
     Deck &deck_;
     QString webDir_;
