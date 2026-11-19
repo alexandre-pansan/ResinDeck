@@ -17,6 +17,7 @@ This is a living document. Each phase is planned in detail before it starts, and
 |---|---|---|
 | Language and toolkit | **C++20 and Qt 6** | Direct control of the GPU for the 3D editor and for slicing, and no browser memory limits. The HALOT protocol already uses Qt's `qCompress` framing, so Qt's version matches it byte for byte. |
 | Build | CMake | The standard for C++ and Qt. |
+| User interface | **Qt Widgets**, with the 3D viewport in a `QRhiWidget` | A slicer is a dense tool interface (panels, settings, shortcuts), where Widgets is strongest, and it keeps everything in C++. Touch is not needed: phones use the web interface. |
 | Target | Chitubox Basic, then Pro | Phases 1–3 reach Basic. Phase 4 adds the Pro features. |
 | Platforms | Linux and Windows first | The same platforms as today. macOS when someone can test it. |
 | License | MIT, unchanged | Dependencies must be MIT-compatible: MIT, BSD, Apache 2.0, MPL 2.0, or LGPL linked dynamically (Qt). **GPL and AGPL code cannot be used**, which rules out copying from PrusaSlicer and using CGAL. Reading their documentation and papers for ideas is fine. |
@@ -48,7 +49,7 @@ The desktop application starts the `remote` server in the same process, the way 
 | Need | Library | License |
 |---|---|---|
 | Window, widgets, network, WebSocket, HTTP server | Qt 6: Widgets, Network, WebSockets, HttpServer | LGPL 3 |
-| 3D rendering | Qt RHI or OpenGL through `QOpenGLWidget` | LGPL 3 |
+| 3D rendering | Qt RHI through `QRhiWidget` (Vulkan, Direct3D, Metal or OpenGL) | LGPL 3 |
 | Mesh booleans, offsets and repair | [manifold](https://github.com/elalish/manifold) | Apache 2.0 |
 | Hollowing (signed distance fields) | [OpenVDB](https://www.openvdb.org/) | MPL 2.0 / Apache 2.0 |
 | Geometry helpers | [libigl](https://libigl.github.io/) and [Eigen](https://eigen.tuxfamily.org/) | MPL 2.0 |
@@ -174,6 +175,5 @@ The features mostly found in Chitubox Pro. Before the phase starts, this list is
 
 ## Open questions
 
-- Qt Widgets or Qt Quick (QML) for the main window. Widgets suits a dense tool interface; Quick makes animations and touch easier. To be decided at the start of phase 0, with a small prototype of each.
 - How many printers to support in phase 1 besides the HALOT family. This depends on contributors and on access to printers for testing.
 - Whether to read other slicers' project files (for example Chitubox `.chitubox` projects). This depends on whether the format is documented.
