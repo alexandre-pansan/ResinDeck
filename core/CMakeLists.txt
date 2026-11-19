@@ -1,6 +1,9 @@
 # resindeck_core: everything that is not user interface, tested on its own.
 add_library(resindeck_core STATIC
+  config.h config.cpp
   printers/status.h printers/status.cpp
+  printers/driver.h printers/driver.cpp
+  printers/drivers.h printers/drivers.cpp
   printers/des.h printers/des.cpp
   printers/halot.h printers/halot.cpp
 )

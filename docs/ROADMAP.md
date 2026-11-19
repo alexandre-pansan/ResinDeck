@@ -24,6 +24,10 @@ This is a living document. Each phase is planned in detail before it starts, and
 
 ## Architecture
 
+Drivers have a **blocking** interface: each method waits for the printer's answer. Every printer runs in its own
+thread, so a slow printer never freezes the window or the server, and a driver for another brand is plain
+step-by-step code.
+
 ```
 app/          desktop application: main window, 3D viewport, tools, settings
 core/         no user interface, tested on its own
@@ -78,14 +82,15 @@ Everything the Python version does, in C++.
 - [ ] `core/printers`: driver contract, normalized status, HALOT driver (token, WebSocket, compressed upload, start, pause, resume, stop, probe)
   - [x] normalized status and printer errors
   - [x] HALOT token (DES) and status parsing, checked against the Python version
-  - [ ] driver contract, WebSocket connection, upload and commands, probe
+  - [x] driver contract and registry; WebSocket connection, upload and commands, probe; tested against a fake HALOT
+  - [ ] checked on a real HALOT-R6
 - [ ] Printer tracking by MAC address after DHCP changes; network scan
 - [ ] Print start and expected end times
 - [ ] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D preview from layers
 - [ ] Main window: printers, library, file info, 3D preview, send and print
 - [ ] `core/remote`: the current HTTP and WebSocket API, serving `web/`; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints
 - [ ] `resindeck.local` over mDNS; QR code
-- [ ] Command line, like today's `resindeck.py`
+- [x] Command line, like today's `resindeck.py` (`resindeck-cli`)
 - [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`)
 - [ ] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
 

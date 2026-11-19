@@ -30,6 +30,7 @@ else()
 endif()
 
 add_subdirectory(core)
+add_subdirectory(app/cli)
 
 enable_testing()
 add_subdirectory(core/tests)

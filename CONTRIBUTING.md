@@ -161,6 +161,9 @@ ctest --test-dir build/cpp --output-on-failure
 
 Add `-DRESINDECK_SANITIZE=ON` to build with AddressSanitizer and UBSan, as CI does on Linux.
 
+The build also gives `build/cpp/app/cli/resindeck-cli`, the native command line. It takes the same commands and
+config file as `resindeck.py` (`version`, `status`, `send`, `print`, `pause`, `stop`).
+
 ## Desktop packages and releases
 
 The AppImage and the Windows `.exe` are built with PyInstaller from `desktop.py`
