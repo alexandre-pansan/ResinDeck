@@ -203,7 +203,8 @@ private slots:
         QJsonObject c = cfg(QString("127.0.0.2:%1").arg(fake.port()));
         c.insert("mac", kMac);
         Printer p(c, net, fast());
-        QVERIFY(QTest::qWaitFor([&] { return p.online(); }, 5000));
+        // two failed connections first: instant on Linux, about 2 s each on Windows (loopback refusals)
+        QVERIFY(QTest::qWaitFor([&] { return p.online(); }, 20000));
         QCOMPARE(p.config().value("host").toString(), fake.host());
         QCOMPARE(net->sweeps, 0);  // found in the ARP table
     }
@@ -225,7 +226,9 @@ private slots:
         QJsonObject c = cfg("127.0.0.2:1");
         c.insert("mac", kMac);
         Printer p(c, net, fast());
-        QTest::qWait(600);  // about 10 failed connections
+        // the first search comes after two failed connections (about 2 s each on Windows)
+        QVERIFY(QTest::qWaitFor([&] { return net->sweeps > 0; }, 20000));
+        QTest::qWait(3000);  // more failed connections, but within a minute of the first search
         QCOMPARE(net->sweeps, 1);
     }
 
