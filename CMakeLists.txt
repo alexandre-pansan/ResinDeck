@@ -34,3 +34,15 @@ add_subdirectory(core)
 add_subdirectory(app/cli)
 add_subdirectory(app/desktop)
 add_subdirectory(core/tests)
+
+# --- install: the layout packages are made from (see packaging/native/) ---
+include(GNUInstallDirs)
+install(TARGETS resindeck resindeck-cli RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} BUNDLE DESTINATION .)
+if(WIN32)
+  # Server::findWebDir() looks for web/ next to the executable
+  install(DIRECTORY static/ DESTINATION ${CMAKE_INSTALL_BINDIR}/web)
+else()
+  install(DIRECTORY static/ DESTINATION ${CMAKE_INSTALL_DATADIR}/resindeck/web)
+  install(FILES packaging/native/resindeck.desktop DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+  install(FILES packaging/icon.png DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps RENAME resindeck.png)
+endif()

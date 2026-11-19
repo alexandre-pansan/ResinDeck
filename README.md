@@ -172,6 +172,10 @@ ResinDeck is becoming a native C++ and Qt application with a full resin slicer: 
 and printing in one place, while the browser and phone interface stays. The phases are in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
+The first phase is done in this repository and not released yet: a native window with the GPU 3D view, the
+printers, the library and phone pairing, doing everything the Python version does. To try it, see
+[Native application](CONTRIBUTING.md#native-application-c-and-qt) in CONTRIBUTING.md.
+
 ## Credits
 
 - [HalotMageProSharp](https://github.com/mrtska/HalotMageProSharp) by mrtska (MIT): the base of

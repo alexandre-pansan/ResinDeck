@@ -1,0 +1,2 @@
+// The Windows executable's icon.
+IDI_ICON1 ICON "../../packaging/icon.ico"

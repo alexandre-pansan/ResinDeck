@@ -10,10 +10,6 @@
 #include <QUdpSocket>
 #include <QtConcurrent/QtConcurrentMap>
 
-#ifdef Q_OS_WIN
-#include <windows.h>
-#endif
-
 namespace resindeck::lan {
 
 QString localIp() {
@@ -87,7 +83,8 @@ QHash<QString, QString> neighbors() {
     if (proc.open(QIODevice::ReadOnly)) return parseNeighbors(QString::fromLatin1(proc.readAll()));
     QProcess arp;
 #ifdef Q_OS_WIN
-    arp.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) { args->flags |= CREATE_NO_WINDOW; });
+    // CREATE_NO_WINDOW: no console flashing up (without including windows.h and its min/max macros)
+    arp.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *args) { args->flags |= 0x08000000; });
 #endif
     arp.start("arp", {"-a"});
     if (!arp.waitForFinished(5000)) return {};

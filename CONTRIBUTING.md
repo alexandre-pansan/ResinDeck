@@ -139,31 +139,59 @@ The release workflow runs the same checks before publishing.
 ## Native application (C++ and Qt)
 
 ResinDeck is being rewritten as a native C++ and Qt application with a full slicer; the plan is in
-[docs/ROADMAP.md](docs/ROADMAP.md). The C++ code lives in `core/` (no user interface, with its tests in
-`core/tests/`) and is built with CMake. It needs a C++20 compiler (GCC 12+, Clang 15+ or MSVC 2022) and
-Qt 6.8 or newer with the WebSockets and HttpServer modules. CI uses Qt 6.11.3. On Linux, Qt also needs the
-OpenGL development files (`sudo apt install libgl-dev libegl-dev` on Debian and Ubuntu).
+[docs/ROADMAP.md](docs/ROADMAP.md). The code:
+
+| Folder | What |
+|---|---|
+| `core/` | everything that is not user interface: printers and drivers, file formats, the shared app state (`deck`), the web server (`remote/`), network helpers (`net/`) |
+| `core/tests/` | Qt Test suites, with a fake HALOT and synthetic `.cxdlpv4` files |
+| `app/desktop/` | the window (Qt Widgets) and the GPU 3D view (QRhi) |
+| `app/cli/` | `resindeck-cli`, the command line |
+| `static/` | the web interface, served by both the Python and the C++ server |
+| `third_party/` | vendored libraries, each with a README saying where it comes from |
+
+It needs a C++20 compiler (GCC 11+, Clang 15+ or MSVC 2022), CMake, and Qt 6.8 or newer with the WebSockets,
+HttpServer and ShaderTools modules. CI uses Qt 6.10.3: aqtinstall cannot read the Windows packages of Qt 6.11
+yet. On Linux, Qt also needs the OpenGL development files (`sudo apt install libgl-dev libegl-dev` on Debian
+and Ubuntu).
 
 Qt can be installed without admin rights with [aqtinstall](https://github.com/miurahr/aqtinstall), and
 CMake and Ninja with pip:
 
 ```bash
 pip install aqtinstall cmake ninja
-aqt install-qt linux desktop 6.11.3 linux_gcc_64 -O ~/Qt -m qtwebsockets qthttpserver
+aqt install-qt linux desktop 6.10.3 linux_gcc_64 -O ~/Qt -m qtwebsockets qthttpserver qtshadertools
 ```
 
 Build and run the tests:
 
 ```bash
-cmake -B build/cpp -G Ninja -DCMAKE_PREFIX_PATH=~/Qt/6.11.3/gcc_64 -DRESINDECK_WERROR=ON
+cmake -B build/cpp -G Ninja -DCMAKE_PREFIX_PATH=~/Qt/6.10.3/gcc_64 -DRESINDECK_WERROR=ON
 cmake --build build/cpp
 ctest --test-dir build/cpp --output-on-failure
 ```
 
 Add `-DRESINDECK_SANITIZE=ON` to build with AddressSanitizer and UBSan, as CI does on Linux.
 
-The build also gives `build/cpp/app/cli/resindeck-cli`, the native command line. It takes the same commands and
-config file as `resindeck.py` (`version`, `status`, `send`, `print`, `pause`, `stop`).
+The build gives:
+- `build/cpp/app/desktop/resindeck`: the desktop application. It also serves the web interface for phones and
+  browsers, like the Python version. `resindeck FILE.cxdlpv4` opens a file.
+- `build/cpp/app/cli/resindeck-cli`: the command line, with the same commands and config file as
+  `resindeck.py` (`version`, `status`, `send`, `print`, `pause`, `stop`), plus `serve` for the web interface
+  without a window.
+
+Both read and write the same `~/.config/resindeck/settings.json` as the Python version, so do not run the
+two at the same time.
+
+### Native packages
+
+```sh
+packaging/native/build_appimage.sh   # Linux: dist/ResinDeck-<version>-x86_64.AppImage (downloads linuxdeploy)
+packaging/native/build_windows.sh    # Windows, in Git Bash: a portable .zip, and an installer with Inno Setup
+```
+
+CI builds both on every pull request (job `native-packages`), starts each one and keeps them as artifacts.
+They are not released yet: the release workflow still publishes the Python version.
 
 ## Desktop packages and releases
 

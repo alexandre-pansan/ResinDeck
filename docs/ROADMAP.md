@@ -94,10 +94,16 @@ Everything the Python version does, in C++.
 - [x] `core/remote`: the current HTTP and WebSocket API, serving the web interface; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints. Same answers as the Python server, endpoint by endpoint
 - [x] `resindeck.local` over mDNS; QR code
 - [x] Command line, like today's `resindeck.py` (`resindeck-cli`)
-- [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`)
-- [ ] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
+- [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`, Inno Setup)
+  - [x] install rules, packaging scripts and a CI job that builds and starts both
+  - [ ] first successful CI run; tested on a real Windows machine
+- [x] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
 
 **Result:** ResinDeck 1.0, native. It does everything 0.3 does.
+
+Before releasing 1.0: run the Python and the native version side by side for a while, with real prints
+(upload, start, pause and stop are only tested against the fake printer so far), then move the Python code
+to a `legacy` branch and switch the release workflow to the native packages.
 
 ### Phase 1: slice and print
 

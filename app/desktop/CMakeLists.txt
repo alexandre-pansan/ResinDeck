@@ -8,6 +8,9 @@ qt_add_executable(resindeck WIN32 MACOSX_BUNDLE
   viewer3d.h viewer3d.cpp
 )
 target_compile_definitions(resindeck PRIVATE RESINDECK_VERSION="${PROJECT_VERSION}")
+if(WIN32)
+  target_sources(resindeck PRIVATE resindeck.rc)
+endif()
 target_link_libraries(resindeck PRIVATE resindeck_core resindeck_warnings Qt6::Widgets)
 
 # QRhi, which draws the 3D view, is public API with fewer compatibility guarantees across Qt versions.

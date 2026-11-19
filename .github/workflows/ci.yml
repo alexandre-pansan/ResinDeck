@@ -63,6 +63,7 @@ jobs:
             htmlcov/
 
   # The native application (C++ and Qt, see docs/ROADMAP.md): build with warnings as errors, run the tests.
+  # Qt 6.10: aqtinstall cannot read the Windows packages of Qt 6.11 yet (they moved to one folder per build).
   cpp:
     strategy:
       fail-fast: false
@@ -73,12 +74,17 @@ jobs:
           - os: windows-latest
             sanitize: "OFF"
     runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen  # the desktop smoke test has no screen
     steps:
       - uses: actions/checkout@v7
+      - name: OpenGL headers (Qt Gui needs them)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl-dev libegl-dev
       - uses: jurplel/install-qt-action@v4
         with:
-          version: "6.11.3"
-          modules: qtwebsockets qthttpserver
+          version: "6.10.3"
+          modules: qtwebsockets qthttpserver qtshadertools
           cache: true
       - name: Configure
         run: >
@@ -88,6 +94,68 @@ jobs:
         run: cmake --build build/cpp --config Debug --parallel
       - name: Test
         run: ctest --test-dir build/cpp -C Debug --output-on-failure
+
+  # Packages of the native application, started once to check they work. Not released yet: the
+  # release workflow still publishes the Python version until the native one replaces it.
+  native-packages:
+    name: native-packages (${{ matrix.os }})
+    needs: cpp
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]  # 22.04: older glibc, so the AppImage runs on more distros
+    env:
+      RESINDECK_LAN: "0"
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build tools and OpenGL headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl-dev libegl-dev libxkbcommon-x11-0 libxcb-cursor0
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.10.3"
+          modules: qtwebsockets qthttpserver qtshadertools
+          cache: true
+
+      - name: Build the AppImage
+        if: runner.os == 'Linux'
+        run: QT_DIR="$QT_ROOT_DIR" sh packaging/native/build_appimage.sh
+      - name: Smoke test the AppImage
+        if: runner.os == 'Linux'
+        run: |
+          app=$(ls dist/*.AppImage)
+          APPIMAGE_EXTRACT_AND_RUN=1 "$app" --port 18766 > app.log 2>&1 &
+          for i in $(seq 60); do curl -sf http://127.0.0.1:18766/api/session && break; sleep 1; done
+          curl -sf http://127.0.0.1:18766/ | grep -q ResinDeck
+          curl -sf http://127.0.0.1:18766/static/vendor/three/three.module.js > /dev/null
+          curl -sf -X POST http://127.0.0.1:18766/api/quit
+          wait || true
+          cat app.log
+
+      - name: Build the Windows packages
+        if: runner.os == 'Windows'
+        shell: bash
+        run: QT_DIR="$QT_ROOT_DIR" sh packaging/native/build_windows.sh
+      - name: Smoke test the Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process build/windows/ResinDeck/resindeck.exe -ArgumentList "--port", "18766" -PassThru
+          $url = "http://127.0.0.1:18766"
+          for ($i = 0; $i -lt 60; $i++) {
+            try { Invoke-WebRequest "$url/api/session" -UseBasicParsing | Out-Null; break } catch { Start-Sleep 1 }
+          }
+          $page = Invoke-WebRequest "$url/" -UseBasicParsing
+          if ($page.Content -notmatch "ResinDeck") { throw "unexpected page" }
+          Invoke-WebRequest "$url/api/quit" -Method Post -UseBasicParsing | Out-Null
+          if (-not $p.WaitForExit(20000)) { $p.Kill(); throw "ResinDeck did not quit" }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ runner.os }}
+          path: dist/*
 
   security:
     runs-on: ubuntu-latest
