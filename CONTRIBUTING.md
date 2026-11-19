@@ -141,7 +141,8 @@ The release workflow runs the same checks before publishing.
 ResinDeck is being rewritten as a native C++ and Qt application with a full slicer; the plan is in
 [docs/ROADMAP.md](docs/ROADMAP.md). The C++ code lives in `core/` (no user interface, with its tests in
 `core/tests/`) and is built with CMake. It needs a C++20 compiler (GCC 12+, Clang 15+ or MSVC 2022) and
-Qt 6.8 or newer with the WebSockets and HttpServer modules. CI uses Qt 6.11.3.
+Qt 6.8 or newer with the WebSockets and HttpServer modules. CI uses Qt 6.11.3. On Linux, Qt also needs the
+OpenGL development files (`sudo apt install libgl-dev libegl-dev` on Debian and Ubuntu).
 
 Qt can be installed without admin rights with [aqtinstall](https://github.com/miurahr/aqtinstall), and
 CMake and Ninja with pip:
