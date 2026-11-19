@@ -1,6 +1,7 @@
 name: CI
 
-# Lint, tests with coverage, security checks and a smoke test of the desktop packages.
+# Lint, tests with coverage, the native C++ build and tests, security checks and a smoke test of
+# the desktop packages.
 # Runs on pull requests and on main; the release workflow runs it before publishing.
 on:
   push:
@@ -60,6 +61,33 @@ jobs:
           path: |
             coverage.xml
             htmlcov/
+
+  # The native application (C++ and Qt, see docs/ROADMAP.md): build with warnings as errors, run the tests.
+  cpp:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            sanitize: "ON"
+          - os: windows-latest
+            sanitize: "OFF"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.11.3"
+          modules: qtwebsockets qthttpserver
+          cache: true
+      - name: Configure
+        run: >
+          cmake -B build/cpp -DCMAKE_BUILD_TYPE=Debug
+          -DRESINDECK_WERROR=ON -DRESINDECK_SANITIZE=${{ matrix.sanitize }}
+      - name: Build
+        run: cmake --build build/cpp --config Debug --parallel
+      - name: Test
+        run: ctest --test-dir build/cpp -C Debug --output-on-failure
 
   security:
     runs-on: ubuntu-latest

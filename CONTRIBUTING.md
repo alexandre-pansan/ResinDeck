@@ -136,6 +136,31 @@ Every pull request runs `.github/workflows/ci.yml`:
 
 The release workflow runs the same checks before publishing.
 
+## Native application (C++ and Qt)
+
+ResinDeck is being rewritten as a native C++ and Qt application with a full slicer; the plan is in
+[docs/ROADMAP.md](docs/ROADMAP.md). The C++ code lives in `core/` (no user interface, with its tests in
+`core/tests/`) and is built with CMake. It needs a C++20 compiler (GCC 12+, Clang 15+ or MSVC 2022) and
+Qt 6.8 or newer with the WebSockets and HttpServer modules. CI uses Qt 6.11.3.
+
+Qt can be installed without admin rights with [aqtinstall](https://github.com/miurahr/aqtinstall), and
+CMake and Ninja with pip:
+
+```bash
+pip install aqtinstall cmake ninja
+aqt install-qt linux desktop 6.11.3 linux_gcc_64 -O ~/Qt -m qtwebsockets qthttpserver
+```
+
+Build and run the tests:
+
+```bash
+cmake -B build/cpp -G Ninja -DCMAKE_PREFIX_PATH=~/Qt/6.11.3/gcc_64 -DRESINDECK_WERROR=ON
+cmake --build build/cpp
+ctest --test-dir build/cpp --output-on-failure
+```
+
+Add `-DRESINDECK_SANITIZE=ON` to build with AddressSanitizer and UBSan, as CI does on Linux.
+
 ## Desktop packages and releases
 
 The AppImage and the Windows `.exe` are built with PyInstaller from `desktop.py`

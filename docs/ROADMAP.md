@@ -33,8 +33,8 @@ core/         no user interface, tested on its own
   supports/   automatic and manual supports
   slicer/     GPU slicing into layer images, anti-aliasing, estimates
   remote/     HTTP and WebSocket server for the browser and the phone, PIN pairing, mDNS
+  tests/      tests of the core
 web/          the browser and phone interface (today's static/)
-tests/
 ```
 
 The desktop application starts the `remote` server in the same process, the way the Python server works today. With the desktop app open, the phone works as it does now, through `resindeck.local`, the QR code and the PIN.
@@ -74,8 +74,11 @@ Each phase ends with a release, and with a real print on a HALOT-R6 once slicing
 
 Everything the Python version does, in C++.
 
-- [ ] CMake project with Qt 6; CI that builds on Linux and Windows and runs the tests
+- [x] CMake project with Qt 6; CI that builds on Linux and Windows and runs the tests
 - [ ] `core/printers`: driver contract, normalized status, HALOT driver (token, WebSocket, compressed upload, start, pause, resume, stop, probe)
+  - [x] normalized status and printer errors
+  - [x] HALOT token (DES) and status parsing, checked against the Python version
+  - [ ] driver contract, WebSocket connection, upload and commands, probe
 - [ ] Printer tracking by MAC address after DHCP changes; network scan
 - [ ] Print start and expected end times
 - [ ] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D preview from layers
