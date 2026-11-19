@@ -166,6 +166,12 @@ go in compressed 1 MiB chunks. Everything known about it is in [docs/PROTOCOL.md
 Bug reports, test results with other HALOT models and translations are very welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Roadmap
+
+ResinDeck is becoming a native C++ and Qt application with a full resin slicer: hollowing, supports, slicing
+and printing in one place, while the browser and phone interface stays. The phases are in
+[docs/ROADMAP.md](docs/ROADMAP.md).
+
 ## Credits
 
 - [HalotMageProSharp](https://github.com/mrtska/HalotMageProSharp) by mrtska (MIT): the base of

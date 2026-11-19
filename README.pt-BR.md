@@ -165,6 +165,12 @@ vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
 Relatos de bugs, testes com outros modelos HALOT e traduções são muito bem-vindos. Veja o
 [CONTRIBUTING.md](CONTRIBUTING.md) (em inglês).
 
+## Próximos passos
+
+O ResinDeck vai virar um programa nativo em C++ e Qt, com um fatiador de resina completo: ocar, suportes,
+fatiar e imprimir num lugar só. A interface no navegador e no celular continua. As fases estão no
+[docs/ROADMAP.md](docs/ROADMAP.md) (em inglês).
+
 ## Créditos
 
 - [HalotMageProSharp](https://github.com/mrtska/HalotMageProSharp), de mrtska (MIT): base do
