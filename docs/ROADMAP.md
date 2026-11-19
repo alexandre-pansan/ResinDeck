@@ -83,7 +83,8 @@ Everything the Python version does, in C++.
   - [x] normalized status and printer errors
   - [x] HALOT token (DES) and status parsing, checked against the Python version
   - [x] driver contract and registry; WebSocket connection, upload and commands, probe; tested against a fake HALOT
-  - [ ] checked on a real HALOT-R6
+  - [x] checked on a real HALOT-R6: version, status and probe (read only)
+  - [ ] upload and print commands on a real HALOT-R6
 - [ ] Printer tracking by MAC address after DHCP changes; network scan
 - [ ] Print start and expected end times
 - [ ] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D preview from layers
