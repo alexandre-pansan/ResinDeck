@@ -1,5 +1,5 @@
 ; Windows installer for the native application (Inno Setup 6). Built by packaging/build_windows.sh
-; from the folder windeployqt fills: iscc /DVersion=x.y.z packaging\resindeck.iss
+; from the folder windeployqt fills: iscc -DVersion=x.y.z packaging\resindeck.iss
 #ifndef Version
   #define Version "0.0.0"
 #endif

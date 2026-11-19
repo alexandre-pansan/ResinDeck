@@ -23,6 +23,7 @@ mkdir -p dist
 rm -f "dist/ResinDeck-$VERSION-windows-x64.zip"
 (cd build/windows && powershell -NoProfile -Command "Compress-Archive -Path ResinDeck -DestinationPath ../../dist/ResinDeck-$VERSION-windows-x64.zip")
 if command -v iscc >/dev/null 2>&1; then
-    iscc "/DVersion=$VERSION" packaging/resindeck.iss
+    # "-D", not "/D": Git Bash turns arguments that start with / into Windows paths
+    iscc "-DVersion=$VERSION" packaging/resindeck.iss
 fi
 ls dist
