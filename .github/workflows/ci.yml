@@ -43,6 +43,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen  # the desktop smoke test has no screen
+      QT_FORCE_STDERR_LOGGING: "1"  # on Windows, Qt's messages and failed assertions go to the log
     steps:
       - uses: actions/checkout@v7
       - name: OpenGL headers (Qt Gui needs them)
@@ -61,6 +62,9 @@ jobs:
         run: cmake --build build/cpp --config Debug --parallel
       - name: Test
         run: ctest --test-dir build/cpp -C Debug --output-on-failure
+      - name: Failed tests again, with all their output
+        if: failure()
+        run: ctest --test-dir build/cpp -C Debug --rerun-failed -V
 
   # The packages, started once to check they work. The release workflow publishes these artifacts.
   packages:

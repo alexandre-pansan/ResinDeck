@@ -14,6 +14,7 @@ struct CliConfig {
     QString driver;
 };
 
+// ~/.config/resindeck/config, or in RESINDECK_CONFIG_DIR when set.
 QString configPath();
 // The config file, overridden by RESINDECK_HOST, RESINDECK_PASSWORD and RESINDECK_DRIVER.
 CliConfig loadConfig();

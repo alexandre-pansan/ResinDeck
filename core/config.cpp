@@ -5,13 +5,19 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
+#include <QFileInfo>
 #include <QStringList>
 
 namespace resindeck {
 
 namespace {
-QString configDir() { return QDir::homePath() + "/.config/resindeck"; }
-QString oldConfigDir() { return QDir::homePath() + "/.config/halot-send"; }
+// RESINDECK_CONFIG_DIR moves the configuration elsewhere (portable setups, tests: on Windows Qt
+// ignores HOME and asks the system for the home folder)
+QString configDir() {
+    return qEnvironmentVariableIsSet("RESINDECK_CONFIG_DIR") ? qEnvironmentVariable("RESINDECK_CONFIG_DIR")
+                                                             : QDir::homePath() + "/.config/resindeck";
+}
+QString oldConfigDir() { return QFileInfo(configDir()).path() + "/halot-send"; }
 
 QString env(const char *name, const QString &fallback) {
     return qEnvironmentVariableIsSet(name) ? qEnvironmentVariable(name) : fallback;

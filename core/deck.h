@@ -34,7 +34,7 @@ private:
 
 // ~/.config/resindeck/settings.json, the same file the Python version (legacy branch) used.
 QString defaultSettingsPath();
-QString defaultCacheDir();  // ~/.cache/resindeck
+QString defaultCacheDir();  // ~/.cache/resindeck, or RESINDECK_CACHE_DIR
 QString newPin();           // six random digits
 // A readable name from a User-Agent, like "Android phone · Chrome".
 QString deviceName(const QString &userAgent);

@@ -72,7 +72,10 @@ QJsonObject loadSettings(const QString &path) {
 }  // namespace
 
 QString defaultSettingsPath() { return QFileInfo(configPath()).path() + "/settings.json"; }
-QString defaultCacheDir() { return QDir::homePath() + "/.cache/resindeck"; }
+QString defaultCacheDir() {
+    return qEnvironmentVariableIsSet("RESINDECK_CACHE_DIR") ? qEnvironmentVariable("RESINDECK_CACHE_DIR")
+                                                            : QDir::homePath() + "/.cache/resindeck";
+}
 
 QString newPin() { return QString("%1").arg(QRandomGenerator::system()->bounded(1000000), 6, 10, QChar('0')); }
 

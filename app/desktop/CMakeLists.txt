@@ -40,6 +40,7 @@ qt_add_resources(resindeck "icon"
 # Smoke test: the window starts with a fresh home folder, draws itself and quits.
 add_test(NAME desktop_starts
   COMMAND ${CMAKE_COMMAND} -E env HOME=${CMAKE_CURRENT_BINARY_DIR}/test-home USERPROFILE=${CMAKE_CURRENT_BINARY_DIR}/test-home
+          RESINDECK_CONFIG_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-home/config RESINDECK_CACHE_DIR=${CMAKE_CURRENT_BINARY_DIR}/test-home/cache
           QT_QPA_PLATFORM=offscreen ASAN_OPTIONS=detect_leaks=0 RESINDECK_LAN=0
           $<TARGET_FILE:resindeck> --port 0 --screenshot ${CMAKE_CURRENT_BINARY_DIR}/desktop_starts.png)
 set_tests_properties(desktop_starts PROPERTIES TIMEOUT 60)

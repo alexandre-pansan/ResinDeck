@@ -26,6 +26,7 @@ private slots:
         QDir().mkpath(home.path());
         qputenv("HOME", home.path().toLocal8Bit());
         qputenv("USERPROFILE", home.path().toLocal8Bit());
+        qputenv("RESINDECK_CONFIG_DIR", home.filePath(".config/resindeck").toLocal8Bit());
         for (const char *v : {"RESINDECK_HOST", "RESINDECK_PASSWORD", "RESINDECK_DRIVER"}) qunsetenv(v);
     }
 

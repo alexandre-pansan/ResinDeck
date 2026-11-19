@@ -100,6 +100,7 @@ private slots:
         QDir().mkpath(home.path());
         qputenv("HOME", home.path().toLocal8Bit());
         qputenv("USERPROFILE", home.path().toLocal8Bit());
+        qputenv("RESINDECK_CONFIG_DIR", home.filePath(".config/resindeck").toLocal8Bit());
         lib = home.filePath("lib");
         QDir().mkpath(lib);
         sliced = lib + "/part.cxdlpv4";

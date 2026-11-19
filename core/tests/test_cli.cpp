@@ -28,6 +28,7 @@ class TestCli : public QObject {
         QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
         env.insert("HOME", home.path());
         env.insert("USERPROFILE", home.path());
+        env.insert("RESINDECK_CONFIG_DIR", home.filePath(".config/resindeck"));
         env.insert("RESINDECK_PASSWORD", password);
         env.remove("RESINDECK_HOST");
         env.remove("RESINDECK_DRIVER");
