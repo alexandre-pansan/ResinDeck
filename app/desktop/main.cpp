@@ -58,6 +58,7 @@ int main(int argc, char *argv[]) {
     const bool serving = server.listen(port, lan);
 
     ui::MainWindow window(deck, serving ? &server : nullptr);
+    if (cli.isSet("screenshot")) window.setWindowFlag(Qt::WindowTransparentForInput);  // the mouse must not move the camera
     window.show();
     if (!cli.positionalArguments().isEmpty()) window.openFile(QFileInfo(cli.positionalArguments().first()).absoluteFilePath());
     if (!serving && !cli.isSet("screenshot"))
@@ -69,7 +70,8 @@ int main(int argc, char *argv[]) {
 
     if (cli.isSet("screenshot")) {
         const QString file = cli.value("screenshot");
-        QTimer::singleShot(4000, &window, [&window, file] {
+        const int delay = qEnvironmentVariableIsSet("RESINDECK_SCREENSHOT_DELAY") ? qEnvironmentVariableIntValue("RESINDECK_SCREENSHOT_DELAY") : 4000;
+        QTimer::singleShot(delay, &window, [&window, file] {
             window.grab().save(file);
             QApplication::quit();
         });

@@ -1,9 +1,9 @@
-// The 3D view of a sliced file: its voxel grid drawn by the GPU through Qt RHI (Vulkan, Direct3D,
+// The 3D view of a sliced file: its mesh (see core/mesh) drawn by the GPU through Qt RHI (Vulkan, Direct3D,
 // Metal or OpenGL, whichever the system has). Drag to orbit, right-drag to pan, wheel to zoom,
 // double-click to reset the view.
 #pragma once
 
-#include "formats/sliced.h"
+#include "mesh/mesh.h"
 
 #include <QPointF>
 #include <QRhiWidget>
@@ -19,23 +19,14 @@ class QRhiShaderResourceBindings;
 
 namespace resindeck::ui {
 
-// Triangles for the outside faces of the solid cells (a face between two solid cells is hidden).
-struct Mesh {
-    std::vector<float> vertices;  // x, y, z, nx, ny, nz per vertex, in mm on the plate
-    std::vector<quint32> indices;
-    std::array<double, 3> bed{};
-    double top = 0;  // highest point of the model, mm
-    bool empty() const { return indices.empty(); }
-};
-Mesh buildMesh(const Voxels &voxels);
-
 class Viewer3D : public QRhiWidget {
     Q_OBJECT
 public:
     explicit Viewer3D(QWidget *parent = nullptr);
     ~Viewer3D() override;
 
-    void setMesh(Mesh mesh);
+    // keepView: the same file in more detail, so leave the camera where the user put it
+    void setMesh(Mesh mesh, bool keepView = false);
     void clear();
     // Cuts the model above this height (mm); a negative value shows all of it.
     void setClipZ(double z);
@@ -52,6 +43,7 @@ protected:
 
 private:
     void buildLines();
+    QVector3D eye() const;
     QMatrix4x4 viewProjection() const;
 
     Mesh mesh_;

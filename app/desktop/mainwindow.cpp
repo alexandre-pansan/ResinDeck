@@ -6,6 +6,7 @@
 #include <QComboBox>
 #include <QDateTime>
 #include <QDragEnterEvent>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -478,22 +479,53 @@ void MainWindow::openFile(const QString &path) {
                              if (thumb) thumb->setImage(f.result());
                          });
 
-    // 3D: the same cached voxel grid the web interface uses
+    // 3D, in two steps: the voxel grid (cached, shared with the web interface) right away, then a
+    // smooth surface through the layers themselves, which replaces it when ready
+    if (surfaceCancel_) surfaceCancel_->store(true);
+    surfaceCancel_ = std::make_shared<std::atomic<bool>>(false);
+    surfaceShown_ = false;
     viewer_->clear();
     meshing_->setText(t("viewer.meshing"));
     meshing_->setVisible(true);
-    deck_.voxels(path, [this, path](const QByteArray &payload, std::exception_ptr error) {
+    deck_.voxels(path, [this, path, sliced, cancel = surfaceCancel_](const QByteArray &payload, std::exception_ptr error) {
         if (path != path_) return;
         if (error) {
             meshing_->setText(t("viewer.readFail", {{"error", errorText(error)}}));
             return;
         }
-        inBackground<Mesh>(this, [payload] { return buildMesh(decodeVoxels(payload)); }, [this, path](QFuture<Mesh> f) {
-            if (path != path_) return;
+        const Voxels voxels = decodeVoxels(payload);
+        inBackground<Mesh>(this, [voxels] { return voxelMesh(voxels); }, [this, path](QFuture<Mesh> f) {
+            if (path != path_ || surfaceShown_) return;
             viewer_->setMesh(f.result());
-            meshing_->setVisible(false);
             showLayer(layerSlider_->value());
         });
+        QPointer<QLabel> label = meshing_;
+        inBackground<Mesh>(
+            this,
+            [sliced, voxels, cancel, label] {
+                SurfaceOptions o;
+                modelBounds(*sliced, voxels, o);
+                o.cancel = cancel.get();
+                QElapsedTimer last;
+                last.start();
+                o.progress = [&](double fraction) {
+                    if (last.elapsed() < 200) return;
+                    last.restart();
+                    QMetaObject::invokeMethod(label, [label, fraction] {
+                        if (label) label->setText(t("viewer.meshing") + QString(" %1%").arg(qRound(fraction * 100)));
+                    });
+                };
+                return surfaceMesh(*sliced, o);
+            },
+            [this, path, cancel](QFuture<Mesh> f) {
+                if (path != path_ || cancel->load()) return;
+                Mesh m = f.result();
+                if (!m.empty()) {
+                    viewer_->setMesh(std::move(m), true);
+                    surfaceShown_ = true;
+                }
+                meshing_->setVisible(false);
+            });
     });
     refreshSendButtons();
     for (int i = 0; i < files_->count(); ++i)

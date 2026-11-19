@@ -11,6 +11,7 @@ add_library(resindeck_core STATIC
   remote/server.h remote/server.cpp
   formats/sliced.h formats/sliced.cpp
   formats/cxdlp.h formats/cxdlp.cpp
+  mesh/mesh.h mesh/mesh.cpp
   printers/status.h printers/status.cpp
   printers/driver.h printers/driver.cpp
   printers/drivers.h printers/drivers.cpp

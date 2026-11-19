@@ -18,66 +18,26 @@ QShader loadShader(const QString &name) {
     return f.open(QIODevice::ReadOnly) ? QShader::fromSerialized(f.readAll()) : QShader();
 }
 
-constexpr quint32 kUniformSize = 128;  // mat4 + 3 vec4 + float, std140
+constexpr quint32 kUniformSize = 144;  // mat4 + 4 vec4 + float, std140
 
 }  // namespace
 
-Mesh buildMesh(const Voxels &v) {
-    Mesh m;
-    m.bed = v.bed;
-    if (v.empty()) return m;
-    const int nz = v.shape[0], ny = v.shape[1], nx = v.shape[2];
-    auto solid = [&](int z, int y, int x) { return z >= 0 && y >= 0 && x >= 0 && z < nz && y < ny && x < nx && v.at(z, y, x); };
-    // the six faces of a unit cube: normal, then four corners counter-clockwise seen from outside
-    struct Face {
-        int dz, dy, dx;
-        float n[3];
-        float c[4][3];
-    };
-    static const Face faces[6] = {
-        {0, 0, 1, {1, 0, 0}, {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}}},
-        {0, 0, -1, {-1, 0, 0}, {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}}},
-        {0, 1, 0, {0, 1, 0}, {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}}},
-        {0, -1, 0, {0, -1, 0}, {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}},
-        {1, 0, 0, {0, 0, 1}, {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}},
-        {-1, 0, 0, {0, 0, -1}, {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}},
-    };
-    const auto [vx, vy, vz] = v.voxel;
-    const auto [ox, oy, oz] = v.origin;
-    for (int z = 0; z < nz; ++z)
-        for (int y = 0; y < ny; ++y)
-            for (int x = 0; x < nx; ++x) {
-                if (!v.at(z, y, x)) continue;
-                for (const Face &f : faces) {
-                    if (solid(z + f.dz, y + f.dy, x + f.dx)) continue;
-                    const auto base = static_cast<quint32>(m.vertices.size() / 6);
-                    for (const auto &c : f.c) {
-                        // image rows grow towards the front of the plate: flip y so the view matches
-                        // the printer seen from the front
-                        m.vertices.insert(m.vertices.end(),
-                                          {static_cast<float>(ox + (double(x) + c[0]) * vx),
-                                           static_cast<float>(v.bed[1] - (oy + (double(y) + c[1]) * vy)),
-                                           static_cast<float>(oz + (double(z) + c[2]) * vz), f.n[0], -f.n[1], f.n[2]});
-                    }
-                    // flipping y mirrors the winding; culling is off, so the order does not matter
-                    m.indices.insert(m.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
-                }
-            }
-    m.top = oz + nz * vz;
-    return m;
-}
-
 Viewer3D::Viewer3D(QWidget *parent) : QRhiWidget(parent) {
     setMinimumSize(200, 200);
+    setSampleCount(4);  // smooth edges
     setFocusPolicy(Qt::StrongFocus);
 }
 
 Viewer3D::~Viewer3D() = default;
 
-void Viewer3D::setMesh(Mesh mesh) {
+void Viewer3D::setMesh(Mesh mesh, bool keepView) {
     mesh_ = std::move(mesh);
-    clipZ_ = -1;
     dirty_ = true;
+    if (keepView) {
+        update();
+        return;
+    }
+    clipZ_ = -1;
     resetView();
 }
 
@@ -90,8 +50,20 @@ void Viewer3D::setClipZ(double z) {
 
 void Viewer3D::resetView() {
     const auto b = mesh_.bed[0] > 0 ? mesh_.bed : std::array<double, 3>{130, 80, 160};
-    target_ = QVector3D(float(b[0] / 2), float(b[1] / 2), float(std::max(mesh_.top, 10.0) / 3));
-    distance_ = float(std::max(b[0], b[1]) * 1.7);
+    // frame the model when there is one, the plate otherwise
+    QVector3D lo{0, 0, 0}, hi{float(b[0]), float(b[1]), float(std::max(mesh_.top, 10.0))};
+    if (!mesh_.empty()) {
+        lo = QVector3D(1e9f, 1e9f, 1e9f);
+        hi = -lo;
+        for (std::size_t i = 0; i < mesh_.vertices.size(); i += 6) {
+            const QVector3D p(mesh_.vertices[i], mesh_.vertices[i + 1], mesh_.vertices[i + 2]);
+            lo = QVector3D(std::min(lo.x(), p.x()), std::min(lo.y(), p.y()), std::min(lo.z(), p.z()));
+            hi = QVector3D(std::max(hi.x(), p.x()), std::max(hi.y(), p.y()), std::max(hi.z(), p.z()));
+        }
+    }
+    target_ = (lo + hi) / 2;
+    const float radius = std::max((hi - lo).length() / 2, 5.0f);
+    distance_ = radius / std::sin(qDegreesToRadians(20.0f)) * 1.05f;  // the 40° field of view fits it
     yaw_ = -35;
     pitch_ = 32;
     update();
@@ -115,9 +87,13 @@ void Viewer3D::buildLines() {
     line(0, by, bz, 0, 0, bz);
 }
 
-QMatrix4x4 Viewer3D::viewProjection() const {
+QVector3D Viewer3D::eye() const {
     const float yaw = qDegreesToRadians(yaw_), pitch = qDegreesToRadians(pitch_);
-    const QVector3D eye = target_ + distance_ * QVector3D(std::cos(pitch) * std::sin(yaw), -std::cos(pitch) * std::cos(yaw), std::sin(pitch));
+    return target_ + distance_ * QVector3D(std::cos(pitch) * std::sin(yaw), -std::cos(pitch) * std::cos(yaw), std::sin(pitch));
+}
+
+QMatrix4x4 Viewer3D::viewProjection() const {
+    const QVector3D eye = this->eye();
     QMatrix4x4 m = rhi_ ? rhi_->clipSpaceCorrMatrix() : QMatrix4x4();
     const QSize size = renderTarget() ? renderTarget()->pixelSize() : this->size();
     m.perspective(40.0f, float(size.width()) / float(std::max(size.height(), 1)), distance_ * 0.01f, distance_ * 10.0f);
@@ -198,7 +174,9 @@ void Viewer3D::render(QRhiCommandBuffer *cb) {
     std::memcpy(frame + 16, model, sizeof model);
     std::memcpy(frame + 20, line, sizeof line);
     frame[24] = light.x(), frame[25] = light.y(), frame[26] = light.z();
-    frame[28] = clipZ_ < 0 ? 1e9f : static_cast<float>(clipZ_);
+    const QVector3D eye = this->eye();
+    frame[28] = eye.x(), frame[29] = eye.y(), frame[30] = eye.z();
+    frame[32] = clipZ_ < 0 ? 1e9f : static_cast<float>(clipZ_);
     u->updateDynamicBuffer(uniforms_.get(), 0, kUniformSize, frame);
 
     const QSize size = renderTarget()->pixelSize();

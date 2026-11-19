@@ -11,6 +11,9 @@
 #include <QMainWindow>
 #include <QTimer>
 
+#include <atomic>
+#include <memory>
+
 class QComboBox;
 class QGridLayout;
 class QLabel;
@@ -79,6 +82,8 @@ private:
     QJsonObject info_;    // its header values
     QJsonArray layerZ_;
     int layerRequest_ = 0;
+    std::shared_ptr<std::atomic<bool>> surfaceCancel_;
+    bool surfaceShown_ = false;  // the detailed 3D is on screen: the coarse one must not replace it  // the detailed 3D of the open file, while it is built
 };
 
 }  // namespace resindeck::ui
