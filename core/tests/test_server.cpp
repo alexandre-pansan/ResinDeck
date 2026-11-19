@@ -193,7 +193,9 @@ private slots:
         QVERIFY(!saved.contains(cookie.split(';').first().split('=').last()));
         QVERIFY(saved.contains("Android phone · Chrome"));
         QVERIFY(f.permissions() & QFileDevice::ReadOwner);
+#ifndef Q_OS_WIN  // Windows has ACLs, not these permission bits
         QVERIFY(!(f.permissions() & QFileDevice::ReadOther));
+#endif
     }
 
     void wrongPinAndRateLimit() {

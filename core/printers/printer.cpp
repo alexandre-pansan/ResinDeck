@@ -287,6 +287,9 @@ Printer::Printer(const QJsonObject &cfg, std::shared_ptr<lan::Network> network, 
     cfg_.insert("driver", type_.info.id);
     worker_ = new PrinterWorker(this, type_, std::move(network), std::move(timing));
     worker_->moveToThread(&thread_);
+    // the worker is deleted in its own thread as it finishes: deleting it from another thread would
+    // send events across threads (its timers' ChildRemoved)
+    QObject::connect(&thread_, &QThread::finished, worker_, &QObject::deleteLater);
     thread_.setObjectName("printer " + cfg.value("id").toString());
     thread_.start();
     QMetaObject::invokeMethod(worker_, [w = worker_] { w->enqueue([w] { w->tryConnect(); }); });
@@ -296,8 +299,7 @@ Printer::~Printer() {
     // Waits for a driver call in progress, which is bounded by the driver's timeouts.
     QMetaObject::invokeMethod(worker_, [w = worker_] { w->stop(); }, Qt::BlockingQueuedConnection);
     thread_.quit();
-    thread_.wait();
-    delete worker_;
+    thread_.wait();  // the worker is gone too (deleteLater on finished)
 }
 
 QString Printer::id() const { return config().value("id").toString(); }
