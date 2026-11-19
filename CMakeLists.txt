@@ -14,7 +14,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(RESINDECK_WERROR "Treat compiler warnings as errors" OFF)
 option(RESINDECK_SANITIZE "Build with AddressSanitizer and UBSan" OFF)
 
-find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Network WebSockets Test)
+find_package(Qt6 6.8 REQUIRED COMPONENTS Core Concurrent Gui Network WebSockets Test)
 qt_standard_project_setup()
 
 add_library(resindeck_warnings INTERFACE)

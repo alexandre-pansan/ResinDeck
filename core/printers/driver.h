@@ -70,6 +70,10 @@ public:
     virtual QJsonObject pause() = 0;
     virtual QJsonObject resume() = 0;
     virtual QJsonObject stop() = 0;
+    // Called from the driver's thread, possibly while another call is waiting for the printer (from
+    // inside its event loop): make that call fail soon with NetworkError. Must not destroy anything;
+    // close() follows. The default does nothing, so waiting calls end at their timeout.
+    virtual void abort() {}
 
     const QString &host() const { return host_; }
     const QString &version() const { return version_; }

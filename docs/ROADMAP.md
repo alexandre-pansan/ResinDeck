@@ -86,8 +86,9 @@ Everything the Python version does, in C++.
   - [x] driver contract and registry; WebSocket connection, upload and commands, probe; tested against a fake HALOT
   - [x] checked on a real HALOT-R6: version, status and probe (read only)
   - [ ] upload and print commands on a real HALOT-R6
-- [ ] Printer tracking by MAC address after DHCP changes; network scan
-- [ ] Print start and expected end times
+- [x] Printer manager: one thread per printer, polling, reconnection, commands and uploads (`core/printers/printer`)
+- [x] Printer tracking by MAC address after DHCP changes; network scan (`core/net/lan`)
+- [x] Print start and expected end times
 - [x] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D grid from layers; identical to the Python reader on 27 real files, about 3× faster
 - [ ] Main window: printers, library, file info, 3D preview, send and print
 - [ ] `core/remote`: the current HTTP and WebSocket API, serving `web/`; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints

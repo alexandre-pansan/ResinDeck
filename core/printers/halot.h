@@ -14,6 +14,7 @@
 
 #include <memory>
 
+class QEventLoop;
 class QWebSocket;
 
 namespace resindeck::halot {
@@ -45,6 +46,8 @@ public:
 
     void open(int timeoutMs = 10000);
     void close();
+    // Drops the connection now; a call waiting for the printer fails with NetworkError.
+    void abort();
 
     // Send a command and wait for the reply with the same "cmd" (or `want`).
     QJsonObject request(const QJsonObject &command, const QString &want = {}, int timeoutMs = 10000);
@@ -76,6 +79,7 @@ private:
     std::unique_ptr<QWebSocket> ws_;
     QQueue<QJsonObject> inbox_;
     bool closed_ = false;
+    QEventLoop *waiting_ = nullptr;  // the event loop of the call waiting for the printer
 };
 
 class HalotDriver : public Driver {
@@ -96,6 +100,7 @@ public:
     QJsonObject pause() override;
     QJsonObject resume() override;
     QJsonObject stop() override;
+    void abort() override;
 
     // True if a HALOT answers at `host` (VERSION_CHECK, no password needed). Quick, for network search.
     static bool probe(const QString &host, int timeoutMs = 1500);

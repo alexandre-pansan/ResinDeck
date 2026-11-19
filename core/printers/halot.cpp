@@ -157,6 +157,12 @@ void Halot::close() {
     inbox_.clear();
 }
 
+void Halot::abort() {
+    closed_ = true;
+    if (ws_) ws_->abort();
+    if (waiting_) waiting_->quit();
+}
+
 void Halot::sendJson(const QJsonObject &obj) {
     if (!ws_ || closed_) throw NetworkError("The connection to the printer is closed.");
     ws_->sendTextMessage(compact(obj));
@@ -173,7 +179,9 @@ QJsonObject Halot::receive(int timeoutMs) {
         QObject::connect(&deadline, &QTimer::timeout, &loop, &QEventLoop::quit);
         QObject::connect(ws_.get(), &QWebSocket::textMessageReceived, &loop, &QEventLoop::quit);
         QObject::connect(ws_.get(), &QWebSocket::disconnected, &loop, &QEventLoop::quit);
+        waiting_ = &loop;
         loop.exec();
+        waiting_ = nullptr;
     }
     return inbox_.dequeue();
 }
@@ -342,6 +350,10 @@ QJsonObject HalotDriver::pause() { return command({{"cmd", "PRINT_PAUSE"}}); }
 QJsonObject HalotDriver::resume() { return command({{"cmd", "PRINT_PAUSE"}}); }  // the same command toggles
 
 QJsonObject HalotDriver::stop() { return command({{"cmd", "PRINT_STOP"}}); }
+
+void HalotDriver::abort() {
+    if (halot_) halot_->abort();
+}
 
 bool HalotDriver::probe(const QString &host, int timeoutMs) {
     const auto [address, port] = splitHost(host);
