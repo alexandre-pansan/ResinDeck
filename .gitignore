@@ -1,12 +1,10 @@
+# build.sh setup puts CMake, Ninja and aqtinstall here
 .venv/
-__pycache__/
-*.pyc
+build/
+dist/
+aqtinstall.log
+# local printer settings, if copied into the folder
 config
 settings.json
 *.part
-build/
-dist/
-.coverage
-coverage.xml
-htmlcov/
-.pytest_cache/
+__pycache__/

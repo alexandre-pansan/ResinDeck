@@ -1,7 +1,7 @@
 name: Release
 
-# Push a tag like v0.1.0 (matching __version__ in resindeck.py) to build the desktop
-# packages and publish them as a GitHub release.
+# Push a tag like v1.0.0 (matching the version in CMakeLists.txt) to run CI, which builds and checks
+# the packages, and publish them as a GitHub release.
 on:
   push:
     tags: ["v*"]
@@ -11,56 +11,25 @@ permissions:
   contents: write
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
-
-  linux:
-    needs: ci
-    runs-on: ubuntu-22.04  # older glibc, so the AppImage runs on more distros
+  version:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
       - name: Check the tag matches the version
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          version=$(python -c 'import re; print(re.search(r"__version__ = \"(.+)\"", open("resindeck.py").read())[1])')
+          version=$(sed -n 's/^project(ResinDeck VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           test "${GITHUB_REF_NAME}" = "v${version}" || { echo "tag ${GITHUB_REF_NAME} != v${version}"; exit 1; }
-      - run: pip install -r requirements-desktop.txt
-      - run: sh packaging/build_appimage.sh python
-      - uses: actions/upload-artifact@v7
-        with:
-          name: linux
-          path: dist/*.AppImage
 
-  windows:
-    needs: ci
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements-desktop.txt
-      - run: python -m PyInstaller --noconfirm --distpath build/dist --workpath build/work packaging/resindeck.spec
-      - name: Name the executable after the version
-        shell: bash
-        run: |
-          version=$(python -c 'import re; print(re.search(r"__version__ = \"(.+)\"", open("resindeck.py").read())[1])')
-          mkdir -p dist
-          mv build/dist/ResinDeck.exe "dist/ResinDeck-${version}-windows-x64.exe"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: windows
-          path: dist/*.exe
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
 
   release:
-    needs: [linux, windows]
+    needs: ci
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      # only the packages: the CI run also uploads the coverage report
       - uses: actions/download-artifact@v8
         with:
           pattern: "{linux,windows}"

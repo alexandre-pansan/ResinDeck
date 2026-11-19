@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=ResinDeck
+Comment=Preview, send and monitor resin 3D prints
+Exec=resindeck %f
+Icon=resindeck
+Categories=Graphics;3DGraphics;Utility;
+Terminal=false

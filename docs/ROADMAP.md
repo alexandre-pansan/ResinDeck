@@ -17,12 +17,17 @@ This is a living document. Each phase is planned in detail before it starts, and
 |---|---|---|
 | Language and toolkit | **C++20 and Qt 6** | Direct control of the GPU for the 3D editor and for slicing, and no browser memory limits. The HALOT protocol already uses Qt's `qCompress` framing, so Qt's version matches it byte for byte. |
 | Build | CMake | The standard for C++ and Qt. |
+| User interface | **Qt Widgets**, with the 3D viewport in a `QRhiWidget` | A slicer is a dense tool interface (panels, settings, shortcuts), where Widgets is strongest, and it keeps everything in C++. Touch is not needed: phones use the web interface. |
 | Target | Chitubox Basic, then Pro | Phases 1–3 reach Basic. Phase 4 adds the Pro features. |
 | Platforms | Linux and Windows first | The same platforms as today. macOS when someone can test it. |
 | License | MIT, unchanged | Dependencies must be MIT-compatible: MIT, BSD, Apache 2.0, MPL 2.0, or LGPL linked dynamically (Qt). **GPL and AGPL code cannot be used**, which rules out copying from PrusaSlicer and using CGAL. Reading their documentation and papers for ideas is fine. |
 | Web interface | Kept, served by the desktop app | The `static/` files (HTML, CSS, JS) are reused unchanged. The C++ app reimplements the same HTTP and WebSocket API, so the phone interface does not need to change. |
 
 ## Architecture
+
+Drivers have a **blocking** interface: each method waits for the printer's answer. Every printer runs in its own
+thread, so a slow printer never freezes the window or the server, and a driver for another brand is plain
+step-by-step code.
 
 ```
 app/          desktop application: main window, 3D viewport, tools, settings
@@ -33,8 +38,8 @@ core/         no user interface, tested on its own
   supports/   automatic and manual supports
   slicer/     GPU slicing into layer images, anti-aliasing, estimates
   remote/     HTTP and WebSocket server for the browser and the phone, PIN pairing, mDNS
+  tests/      tests of the core
 web/          the browser and phone interface (today's static/)
-tests/
 ```
 
 The desktop application starts the `remote` server in the same process, the way the Python server works today. With the desktop app open, the phone works as it does now, through `resindeck.local`, the QR code and the PIN.
@@ -44,7 +49,7 @@ The desktop application starts the `remote` server in the same process, the way 
 | Need | Library | License |
 |---|---|---|
 | Window, widgets, network, WebSocket, HTTP server | Qt 6: Widgets, Network, WebSockets, HttpServer | LGPL 3 |
-| 3D rendering | Qt RHI or OpenGL through `QOpenGLWidget` | LGPL 3 |
+| 3D rendering | Qt RHI through `QRhiWidget` (Vulkan, Direct3D, Metal or OpenGL) | LGPL 3 |
 | Mesh booleans, offsets and repair | [manifold](https://github.com/elalish/manifold) | Apache 2.0 |
 | Hollowing (signed distance fields) | [OpenVDB](https://www.openvdb.org/) | MPL 2.0 / Apache 2.0 |
 | Geometry helpers | [libigl](https://libigl.github.io/) and [Eigen](https://eigen.tuxfamily.org/) | MPL 2.0 |
@@ -74,19 +79,30 @@ Each phase ends with a release, and with a real print on a HALOT-R6 once slicing
 
 Everything the Python version does, in C++.
 
-- [ ] CMake project with Qt 6; CI that builds on Linux and Windows and runs the tests
-- [ ] `core/printers`: driver contract, normalized status, HALOT driver (token, WebSocket, compressed upload, start, pause, resume, stop, probe)
-- [ ] Printer tracking by MAC address after DHCP changes; network scan
-- [ ] Print start and expected end times
-- [ ] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D preview from layers
-- [ ] Main window: printers, library, file info, 3D preview, send and print
-- [ ] `core/remote`: the current HTTP and WebSocket API, serving `web/`; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints
-- [ ] `resindeck.local` over mDNS; QR code
-- [ ] Command line, like today's `resindeck.py`
-- [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`)
-- [ ] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
+- [x] CMake project with Qt 6; CI that builds on Linux and Windows and runs the tests
+- [x] `core/printers`: driver contract, normalized status, HALOT driver (token, WebSocket, compressed upload, start, pause, resume, stop, probe)
+  - [x] normalized status and printer errors
+  - [x] HALOT token (DES) and status parsing, checked against the Python version
+  - [x] driver contract and registry; WebSocket connection, upload and commands, probe; tested against a fake HALOT
+  - [x] checked on a real HALOT-R6: version, status and probe (read only)
+  - [x] upload, print, pause, resume and stop on a real HALOT-R6
+- [x] Printer manager: one thread per printer, polling, reconnection, commands and uploads (`core/printers/printer`)
+- [x] Printer tracking by MAC address after DHCP changes; network scan (`core/net/lan`)
+- [x] Print start and expected end times
+- [x] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D grid from layers; identical to the Python reader on 27 real files, about 3× faster
+- [x] Main window (Qt Widgets): printers, library, file info, 3D preview on the GPU, layers, send and print, phone pairing; strings shared with the web interface
+- [x] `core/remote`: the current HTTP and WebSocket API, serving the web interface; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints. Same answers as the Python server, endpoint by endpoint
+- [x] `resindeck.local` over mDNS; QR code
+- [x] Command line, like today's `resindeck.py` (`resindeck-cli`)
+- [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`, Inno Setup)
+  - [x] install rules, packaging scripts and a CI job that builds and starts both
+  - [ ] first successful CI run
+  - [ ] tested on a real Windows machine
+- [x] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
 
-**Result:** ResinDeck 1.0, native. It does everything 0.3 does.
+**Result:** ResinDeck 1.0, native. It does everything 0.3 does. **Released.**
+
+The Python code moved to the `legacy` branch, and the release workflow publishes the native packages.
 
 ### Phase 1: slice and print
 
@@ -165,6 +181,5 @@ The features mostly found in Chitubox Pro. Before the phase starts, this list is
 
 ## Open questions
 
-- Qt Widgets or Qt Quick (QML) for the main window. Widgets suits a dense tool interface; Quick makes animations and touch easier. To be decided at the start of phase 0, with a small prototype of each.
 - How many printers to support in phase 1 besides the HALOT family. This depends on contributors and on access to printers for testing.
 - Whether to read other slicers' project files (for example Chitubox `.chitubox` projects). This depends on whether the format is documented.

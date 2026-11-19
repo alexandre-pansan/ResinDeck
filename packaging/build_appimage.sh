@@ -1,44 +1,39 @@
 #!/bin/sh
-# Builds dist/ResinDeck-<version>-x86_64.AppImage. Needs the packages in requirements-desktop.txt.
-# Usage: packaging/build_appimage.sh [python]   (default: .venv/bin/python)
+# Builds dist/ResinDeck-<version>-x86_64.AppImage from the native application (C++ and Qt).
+# Needs CMake, Ninja and Qt; QT_DIR points at Qt (default ~/Qt/6.10.3/gcc_64, the version CI uses).
+# linuxdeploy and its Qt plugin are downloaded into build/tools the first time.
 set -eu
 cd "$(dirname "$0")/.."
-PY=${1:-.venv/bin/python}
-VERSION=$("$PY" -c 'import re; print(re.search(r"__version__ = \"(.+)\"", open("resindeck.py").read())[1])')
+QT_DIR=${QT_DIR:-$HOME/Qt/6.10.3/gcc_64}
+VERSION=$(sed -n 's/^project(ResinDeck VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+BUILD=build/native-release
+APPDIR=build/ResinDeck-native.AppDir
 
-"$PY" -m PyInstaller --noconfirm --distpath build/dist --workpath build/work packaging/resindeck.spec
-
-APPDIR=build/ResinDeck.AppDir
+cmake -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$QT_DIR"
+cmake --build "$BUILD" --target resindeck resindeck-cli
 rm -rf "$APPDIR"
-mkdir -p "$APPDIR/usr/bin"
-cp -r build/dist/resindeck/. "$APPDIR/usr/bin/"
-cp packaging/icon.png "$APPDIR/resindeck.png"
-cat > "$APPDIR/resindeck.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=ResinDeck
-Comment=Preview, send and monitor resin 3D prints
-Exec=resindeck
-Icon=resindeck
-Categories=Graphics;3DGraphics;Utility;
-Terminal=false
-EOF
-cat > "$APPDIR/AppRun" <<'EOF'
-#!/bin/sh
-HERE=$(dirname "$(readlink -f "$0")")
-exec "$HERE/usr/bin/resindeck" "$@"
-EOF
-chmod +x "$APPDIR/AppRun"
+DESTDIR="$APPDIR" cmake --install "$BUILD" --prefix /usr
 
-TOOL=build/tools/appimagetool-x86_64.AppImage
-if [ ! -x "$TOOL" ]; then
-    mkdir -p build/tools
-    curl -sSfL -o "$TOOL" https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-    chmod +x "$TOOL"
-fi
+TOOLS=build/tools
+mkdir -p "$TOOLS"
+for tool in linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage \
+            linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage; do
+    file="$TOOLS/$(basename "$tool")"
+    if [ ! -x "$file" ]; then
+        curl -sSfL -o "$file" "https://github.com/$tool"
+        chmod +x "$file"
+    fi
+done
 
+# the Qt plugin finds Qt through qmake; Wayland is added next to the default X11 (xcb) plugin
+export QMAKE="$QT_DIR/bin/qmake"
+export LD_LIBRARY_PATH="$QT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export EXTRA_PLATFORM_PLUGINS="libqwayland.so"
+export EXTRA_QT_MODULES="waylandclient"
+export APPIMAGE_EXTRACT_AND_RUN=1  # the tools are AppImages too: run them without FUSE (CI containers)
 mkdir -p dist
-OUT="dist/ResinDeck-$VERSION-x86_64.AppImage"
-# extract-and-run avoids needing FUSE on the build machine
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 "$TOOL" --no-appstream "$APPDIR" "$OUT"
-echo "Built $OUT"
+OUTPUT="dist/ResinDeck-$VERSION-x86_64.AppImage" "$TOOLS/linuxdeploy-x86_64.AppImage" \
+    --appdir "$APPDIR" --plugin qt --output appimage \
+    --desktop-file "$APPDIR/usr/share/applications/resindeck.desktop" \
+    --icon-file "$APPDIR/usr/share/icons/hicolor/512x512/apps/resindeck.png"
+echo "dist/ResinDeck-$VERSION-x86_64.AppImage"
