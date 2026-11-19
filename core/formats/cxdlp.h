@@ -8,6 +8,7 @@
 #include <QImage>
 #include <QJsonObject>
 #include <QList>
+#include <QMutex>
 #include <QString>
 
 #include <array>
@@ -67,6 +68,7 @@ private:
     QByteArray readAt(qint64 offset, qint64 length) const;
 
     QString path_;
+    mutable QMutex fileMutex_;  // layers are read from several threads at once
     mutable QFile file_;
     QString printer_;
     int resX_ = 0, resY_ = 0;

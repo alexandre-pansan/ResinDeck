@@ -9,6 +9,8 @@
 //
 // Config: ~/.config/resindeck/config (HOST=..., PASSWORD=..., DRIVER=halot)
 #include "config.h"
+#include "deck.h"
+#include "remote/server.h"
 #include "printers/drivers.h"
 
 #include <QCommandLineParser>
@@ -43,11 +45,28 @@ bool confirm(const QString &name, bool yes) {
     return answer == "y" || answer == "yes" || answer == "s" || answer == "sim";
 }
 
+// The web interface without the desktop window, until /api/quit or Ctrl+C.
+int serve(const QCommandLineParser &cli) {
+    migrateConfig();
+    const bool lan = qEnvironmentVariable("RESINDECK_LAN", "1") != "0";
+    bool ok = false;
+    const auto port = static_cast<quint16>(cli.value("port").toUInt(&ok));
+    if (!ok) fail("Invalid port: " + cli.value("port"));
+    Deck deck;
+    Server server(deck, Server::findWebDir());
+    if (!server.listen(port, lan)) fail(QString("Port %1 is in use: is ResinDeck already running?").arg(port));
+    out << QString("ResinDeck running at http://127.0.0.1:%1/  (Ctrl+C to quit)").arg(port) << Qt::endl;
+    for (const QString &url : server.remoteUrls())
+        out << "  on the network: " << url << "  (PIN " << deck.pin() << ")" << Qt::endl;
+    QObject::connect(&deck, &Deck::quitRequested, qApp, &QCoreApplication::quit);
+    return QCoreApplication::exec();
+}
+
 int run(const QCommandLineParser &cli) {
     const QStringList args = cli.positionalArguments();
     const QString cmd = args.value(0);
-    if (cmd.isEmpty() || cmd == "ui")
-        fail("The interface is not in the native version yet. Run start.sh for the web interface.");
+    if (cmd.isEmpty()) fail("No command. See --help.");
+    if (cmd == "serve" || cmd == "ui") return serve(cli);
     const QStringList known{"version", "status", "raw-status", "send", "print", "pause", "stop"};
     if (!known.contains(cmd)) fail("Unknown command: " + cmd + ". See --help.");
     if ((cmd == "send" || cmd == "print") && args.size() < 2) fail("Missing file name. See --help.");
@@ -117,7 +136,8 @@ int main(int argc, char *argv[]) {
         "  send FILE [--print]      upload a sliced file to the printer\n"
         "  print NAME               print a file that is already on the printer\n"
         "  pause                    pause / resume\n"
-        "  stop                     cancel the print\n\n"
+        "  stop                     cancel the print\n"
+        "  serve [--port N]         web interface for the browser and phones (no window)\n\n"
         "Config: ~/.config/resindeck/config (HOST=..., PASSWORD=..., DRIVER=halot)");
     cli.addHelpOption();
     cli.addVersionOption();
@@ -126,8 +146,9 @@ int main(int argc, char *argv[]) {
         {"driver", "Printer type (default: from config, or halot).", "driver"},
         {"print", "send: start printing after the upload."},
         {{"y", "yes"}, "Do not ask for confirmation before printing."},
+        {"port", "serve: port of the web interface (default 8765).", "port", "8765"},
     });
-    cli.addPositionalArgument("command", "version, status, raw-status, send, print, pause or stop.");
+    cli.addPositionalArgument("command", "version, status, raw-status, send, print, pause, stop or serve.");
     cli.process(app);
     return run(cli);
 }

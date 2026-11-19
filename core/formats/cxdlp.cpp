@@ -164,6 +164,7 @@ File::File(const QString &path) : path_(path), file_(path) {
 }
 
 QByteArray File::readAt(qint64 offset, qint64 length) const {
+    QMutexLocker lock(&fileMutex_);
     if (!file_.seek(offset)) return {};
     return file_.read(length);
 }

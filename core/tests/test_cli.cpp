@@ -158,10 +158,10 @@ private slots:
         QVERIFY(r.err.contains("Unknown command"));
     }
 
-    void noCommandPointsToTheWebInterface() {
+    void noCommand() {
         const Result r = run({});
         QCOMPARE(r.code, 1);
-        QVERIFY(r.err.contains("start.sh"));
+        QVERIFY(r.err.contains("No command"));
     }
 };
 

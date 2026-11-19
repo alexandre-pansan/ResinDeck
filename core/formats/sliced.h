@@ -39,6 +39,7 @@ struct Voxels {
     }
 };
 
+// Implementations must allow several threads to read layers at once.
 class SlicedFile {
 public:
     using Progress = std::function<void(double fraction)>;

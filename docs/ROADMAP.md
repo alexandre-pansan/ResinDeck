@@ -91,8 +91,8 @@ Everything the Python version does, in C++.
 - [x] Print start and expected end times
 - [x] `core/formats`: `.cxdlpv4` reader (header, previews, RLE layers, checksum), 3D grid from layers; identical to the Python reader on 27 real files, about 3× faster
 - [ ] Main window: printers, library, file info, 3D preview, send and print
-- [ ] `core/remote`: the current HTTP and WebSocket API, serving `web/`; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints
-- [ ] `resindeck.local` over mDNS; QR code
+- [x] `core/remote`: the current HTTP and WebSocket API, serving the web interface; PIN pairing, sessions, rate limit, security headers, Origin and Host checks, local-only endpoints. Same answers as the Python server, endpoint by endpoint
+- [x] `resindeck.local` over mDNS; QR code
 - [x] Command line, like today's `resindeck.py` (`resindeck-cli`)
 - [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`)
 - [ ] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
