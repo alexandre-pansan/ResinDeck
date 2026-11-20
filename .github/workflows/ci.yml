@@ -96,6 +96,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           app=$(ls dist/*.AppImage)
+          # the plugins the 3D view needs on Wayland
+          (cd build && "../$app" --appimage-extract > /dev/null)
+          test -f build/squashfs-root/usr/plugins/wayland-graphics-integration-client/libqt-plugin-wayland-egl.so
+          test -f build/squashfs-root/usr/lib/libQt6OpenGL.so.6
           APPIMAGE_EXTRACT_AND_RUN=1 "$app" --port 18766 > app.log 2>&1 &
           for i in $(seq 60); do curl -sf http://127.0.0.1:18766/api/session && break; sleep 1; done
           curl -sf http://127.0.0.1:18766/ | grep -q ResinDeck
