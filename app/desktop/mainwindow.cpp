@@ -30,6 +30,8 @@
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 
+#include <algorithm>
+
 namespace resindeck::ui {
 
 namespace {
@@ -190,6 +192,10 @@ void MainWindow::buildUi() {
     layerSlider_ = new QSlider(Qt::Horizontal);
     layerValue_ = new QLabel;
     layerValue_->setObjectName("mono");
+    followBadge_ = new QLabel;
+    followBadge_->setObjectName("badge");
+    followBadge_->hide();
+    srow->addWidget(followBadge_);
     srow->addWidget(layerLabel_);
     srow->addWidget(layerSlider_, 1);
     srow->addWidget(layerValue_);
@@ -237,7 +243,16 @@ void MainWindow::buildUi() {
         if (item && item->data(Qt::UserRole).toString() != path_) openFile(item->data(Qt::UserRole).toString());
     });
     connect(tabs_, &QTabBar::currentChanged, this, &MainWindow::showTab);
-    connect(layerSlider_, &QSlider::valueChanged, this, &MainWindow::showLayer);
+    connect(layerSlider_, &QSlider::valueChanged, this, [this](int index) {
+        if (!followMove_) {  // moved by hand: stop following
+            followPending_ = false;
+            if (!follow_.isEmpty()) {
+                follow_.clear();
+                updateFollow();
+            }
+        }
+        showLayer(index);
+    });
     connect(target_, &QComboBox::currentIndexChanged, this, &MainWindow::refreshSendButtons);
     connect(send_, &QPushButton::clicked, this, [this] { send(false); });
     connect(sendPrint_, &QPushButton::clicked, this, [this] { send(true); });
@@ -280,7 +295,8 @@ void MainWindow::refreshPrinters() {
             delete item;
         }
         for (Printer *p : printers) {
-            auto *card = new PrinterCard(p);
+            auto *card = new PrinterCard(p, [this](const QString &name) { return libraryByName_.value(name); });
+            connect(card, &PrinterCard::follow, this, &MainWindow::startFollowing);
             connect(card, &PrinterCard::configure, this, [this](Printer *printer) { PrinterDialog(deck_, printer, this).exec(); });
             connect(card, &PrinterCard::message, this, &MainWindow::status);
             printerList_->addWidget(card);
@@ -300,6 +316,7 @@ void MainWindow::refreshPrinters() {
         target_->blockSignals(false);
     }
     for (PrinterCard *c : cards_) c->refresh();
+    updateFollow();
     for (int i = 0; i < target_->count(); ++i)
         if (Printer *p = deck_.printer(target_->itemData(i).toString())) target_->setItemText(i, p->config().value("name").toString());
     refreshSendButtons();
@@ -334,11 +351,15 @@ void MainWindow::send(bool print) {
                                        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     auto *watcher = new QFutureWatcher<QJsonObject>(this);
-    connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [this, watcher, print, printer] {
+    connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [this, watcher, print, printer, id = p->id()] {
         watcher->deleteLater();
         try {
             watcher->result();
             status(t(print ? "send.sentPrinting" : "send.sent", {{"printer", printer}}));
+            if (print) {
+                follow_ = id;
+                updateFollow();
+            }
         } catch (...) {
             const QString text = errorText(std::current_exception());
             status(text, true);
@@ -356,6 +377,11 @@ void MainWindow::refreshLibrary() {
 
     const QJsonObject lib = deck_.library();
     const QJsonArray list = lib.value("files").toArray();
+    libraryByName_.clear();
+    for (const QJsonValue &v : list) {  // newest first: keep the first of each name
+        const QJsonObject f = v.toObject();
+        if (!libraryByName_.contains(f.value("name").toString())) libraryByName_.insert(f.value("name").toString(), f.value("path").toString());
+    }
     files_->blockSignals(true);
     files_->clear();
     const QLocale locale(language());
@@ -387,6 +413,7 @@ void MainWindow::refreshLibrary() {
     files_->blockSignals(false);
     libraryNote_->setText(deck_.folders().isEmpty() ? t("library.noFolder") : list.isEmpty() ? t("library.empty") : QString());
     libraryNote_->setVisible(!libraryNote_->text().isEmpty());
+    for (PrinterCard *c : cards_) c->refresh();  // a printing file may have arrived or gone
 }
 
 void MainWindow::addFiles(const QStringList &paths) {
@@ -428,6 +455,7 @@ void MainWindow::dropEvent(QDropEvent *e) {
 
 void MainWindow::openFile(const QString &path) {
     path_ = path;
+    follow_.clear();
     try {
         info_ = deck_.fileInfo(path);
     } catch (...) {
@@ -528,12 +556,59 @@ void MainWindow::openFile(const QString &path) {
             });
     });
     refreshSendButtons();
+    followPending_ = true;  // if a printer is printing this file, follow it (now or at its next status)
+    updateFollow();
     for (int i = 0; i < files_->count(); ++i)
         if (files_->item(i)->data(Qt::UserRole).toString() == path) {
             files_->blockSignals(true);
             files_->setCurrentRow(i);
             files_->blockSignals(false);
         }
+}
+
+// --- following a print ---------------------------------------------------------------------
+
+void MainWindow::startFollowing(Printer *printer, const QString &path) {
+    if (path != path_) openFile(path);
+    if (path != path_) return;  // could not open it
+    follow_ = printer->id();
+    followPending_ = false;
+    updateFollow();
+}
+
+// Keeps the slider, and so the 3D cut, on the layer being printed; stops when the print ends.
+void MainWindow::updateFollow() {
+    if (follow_.isEmpty() && followPending_ && !path_.isEmpty())
+        for (Printer *printer : deck_.printers()) {
+            const QJsonObject j = printer->toJson();
+            if (j.value("online").toBool() && !printerReady(j) &&
+                j.value("status").toObject().value("file").toString() == QFileInfo(path_).fileName()) {
+                follow_ = printer->id();
+                followPending_ = false;
+                break;
+            }
+        }
+    Printer *p = follow_.isEmpty() ? nullptr : deck_.printer(follow_);
+    const QJsonObject j = p ? p->toJson() : QJsonObject();
+    const QJsonObject st = j.value("status").toObject();
+    const int total = st.value("layers").toInt(), cur = st.value("layer").toInt();
+    const bool printing = p && j.value("online").toBool() && !printerReady(j) && total > 0 &&
+                          st.value("file").toString() == QFileInfo(path_).fileName();
+    if (p && !printing && printerReady(j)) {  // finished, stopped or another file: show the whole model
+        follow_.clear();
+        followMove_ = true;
+        layerSlider_->setValue(layerSlider_->maximum());
+        followMove_ = false;
+    }
+    for (PrinterCard *c : cards_) c->setFollowing(printing && c->printer() == p);
+    followBadge_->setVisible(printing);
+    if (!printing) return;
+    const QString state = st.value("state").toString();
+    followBadge_->setText(t(state == "paused" || state == "pausing" ? "viewer.followingPaused" : "viewer.following",
+                            {{"name", j.value("name").toString()}, {"cur", cur}, {"total", total}}));
+    followMove_ = true;
+    layerSlider_->setValue(std::clamp(cur - 1, 0, layerSlider_->maximum()));
+    followMove_ = false;
 }
 
 void MainWindow::showLayer(int index) {

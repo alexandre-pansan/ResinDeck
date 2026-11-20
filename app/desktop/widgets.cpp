@@ -59,7 +59,8 @@ QColor statusColor(const QJsonObject &p) {
 
 // --- PrinterCard -------------------------------------------------------------------------
 
-PrinterCard::PrinterCard(Printer *printer, QWidget *parent) : QFrame(parent), printer_(printer) {
+PrinterCard::PrinterCard(Printer *printer, FindFile findFile, QWidget *parent)
+    : QFrame(parent), printer_(printer), findFile_(std::move(findFile)) {
     setObjectName("printerCard");
     auto *col = new QVBoxLayout(this);
     col->setContentsMargins(12, 10, 12, 10);
@@ -80,8 +81,18 @@ PrinterCard::PrinterCard(Printer *printer, QWidget *parent) : QFrame(parent), pr
     file_ = new QLabel;
     file_->setObjectName("muted");
     file_->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    notInLibrary_ = new QLabel;
+    notInLibrary_->setObjectName("small");
+    notInLibrary_->setWordWrap(true);
+    follow_ = new QPushButton;
+    follow_->setObjectName("link");
+    follow_->setCursor(Qt::PointingHandCursor);
+    auto *fileRow = new QHBoxLayout;
+    fileRow->addWidget(file_, 1);
+    fileRow->addWidget(follow_);
     col->addWidget(state_);
-    col->addWidget(file_);
+    col->addLayout(fileRow);
+    col->addWidget(notInLibrary_);
 
     progress_ = new QProgressBar;
     progress_->setTextVisible(false);
@@ -138,6 +149,10 @@ PrinterCard::PrinterCard(Printer *printer, QWidget *parent) : QFrame(parent), pr
             QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
         if (answer == QMessageBox::Yes) runCommand("stop");
     });
+    connect(follow_, &QPushButton::clicked, this, [this] {
+        const QString path = findFile_(printer_->toJson().value("status").toObject().value("file").toString());
+        if (!path.isEmpty()) emit follow(printer_, path);
+    });
     connect(configure_, &QPushButton::clicked, this, [this] { emit configure(printer_); });
     refresh();
 }
@@ -155,6 +170,12 @@ void PrinterCard::runCommand(const QString &action) {
     });
     watcher->setFuture(printer_->command(action));
     if (action == "pause" || action == "resume") emit message(t(action == "pause" ? "pause.pausing" : "pause.resuming"), false);
+}
+
+void PrinterCard::setFollowing(bool following) {
+    if (following == following_) return;
+    following_ = following;
+    refresh();
 }
 
 void PrinterCard::refresh() {
@@ -223,6 +244,13 @@ void PrinterCard::refresh() {
     stop_->setText(t("printers.stop"));
     pause_->setVisible(active);
     stop_->setVisible(active);
+    // follow the print in 3D when its file is in the library (the printer cannot send it back)
+    const bool inLibrary = !file.isEmpty() && !findFile_(file).isEmpty();
+    follow_->setText(t("printers.follow"));
+    follow_->setToolTip(t("printers.followTitle"));
+    follow_->setVisible(active && inLibrary && !following_);
+    notInLibrary_->setText(t("printers.notInLibrary"));
+    notInLibrary_->setVisible(active && !file.isEmpty() && !inLibrary);
     configure_->setText(t("printers.configure"));
     configure_->setToolTip(t("printers.configureTitle"));
 }
