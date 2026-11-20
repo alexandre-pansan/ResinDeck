@@ -96,24 +96,36 @@ QImage decodeRgb15(const QByteArray &data, int width, int height);
 // CRC-32 as the file footer uses it: reflected, polynomial 0xEDB88320, starting at 0, no final xor.
 quint32 footerCrc(const QByteArray &data);
 
-// Writes .cxdlpv4 files. Only what tests need for now; phase 1 of docs/ROADMAP.md grows this into
-// the slicer's output.
+// Number of lit (not black) pixels in an encoded RLE7 layer.
+qint64 rle7LitPixels(const QByteArray &rle);
+
+// Writes .cxdlpv4 files laid out as HALOT BOX and Chitubox write them for HALOT printers: the header,
+// a small (120x120) and a large (300x300) preview, the print settings, the layer table, then each layer
+// with its lift settings and its RLE7 image, and the checksum.
 struct Writer {
     QString printer = "HALOT-R6";
     QByteArray magic = QByteArray("CXSW3DV2\0", 9);
     std::array<double, 3> bed{6.0, 4.0, 50.0};
     double layerHeight = 0.05;
     int bottomLayers = 2;
-    int printTime = 1234;
+    int printTime = 1234;  // s
     int antiAlias = 4;
     Params params{5.0, 60.0, 4.0, 90.0, 150.0, 1.25, 1.5, 0.1, 1.0, 0.5, 2.5, 30.0};
-    QImage preview;               // RGB; empty for a 16x12 test image
-    std::vector<QImage> layers;   // gray, all the same size
-    bool encrypted = false;       // set the encryption flag (the data stays plain)
-    bool corruptCrc = false;
+    int lightPwm = 255, bottomLightPwm = 255;
+    QImage previewSmall, previewLarge;  // RGB; an empty one is scaled from the other (both empty: a 16x12 test image)
+    QByteArray encodedPreviewSmall, encodedPreviewLarge;  // already encoded (RGB15) previews of those sizes
+    // The layers, as images (gray, all the same size) or already encoded with encodeRle7; with both, the
+    // encoded ones are used and the images only give the resolution.
+    std::vector<QImage> layers;
+    std::vector<QByteArray> encodedLayers;
+    int width = 0, height = 0;  // resolution when only encodedLayers is set
+    bool encrypted = false;     // set the encryption flag (the data stays plain); for tests
+    bool corruptCrc = false;    // for tests
 
     // Throws FormatError if the file cannot be written.
     void write(const QString &path) const;
+    // The file's bytes.
+    QByteArray bytes() const;
 };
 
 }  // namespace resindeck::cxdlp

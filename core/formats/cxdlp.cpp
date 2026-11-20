@@ -375,12 +375,12 @@ QByteArray encodeRgb15(const QImage &rgb) {
     std::size_t i = 0;
     while (i < dots.size()) {
         std::size_t j = i;
-        while (j < dots.size() && dots[j] == dots[i] && j - i < 0x1000) ++j;
+        while (j < dots.size() && dots[j] == dots[i] && j - i < 0xFFF) ++j;
         if (j - i == 1) {
             out.u16(dots[i]);
-        } else {
+        } else {  // as Chitubox: runs of up to 4095, the length word flagged with 0x3000
             out.u16(dots[i] | 0x20);
-            out.u16(static_cast<int>((j - i - 1) & 0xFFF));
+            out.u16(static_cast<int>(0x3000 | (j - i - 1)));
         }
         i = j;
     }
@@ -411,16 +411,64 @@ bool verifyChecksum(const QString &path) {
 
 // --- writing -----------------------------------------------------------------------------
 
-void Writer::write(const QString &path) const {
-    QImage thumb = preview;
-    if (thumb.isNull()) {  // red left half, blue right half
-        thumb = QImage(16, 12, QImage::Format_RGB888);
-        for (int y = 0; y < 12; ++y)
-            for (int x = 0; x < 16; ++x) thumb.setPixelColor(x, y, x < 8 ? QColor(248, 0, 0) : QColor(0, 0, 248));
+qint64 rle7LitPixels(const QByteArray &rle) {
+    const auto *b = reinterpret_cast<const uchar *>(rle.constData());
+    const qsizetype len = rle.size();
+    auto at = [&](qsizetype k) -> uint { return k < len ? b[k] : 0u; };
+    qint64 lit = 0;
+    qsizetype i = 0;
+    while (i < len) {
+        uint code = b[i++];
+        qint64 stride = 1;
+        if (code & 0x80) {
+            code &= 0x7F;
+            const uint s = at(i);
+            if (!(s & 0x80)) {
+                stride = s;
+                i += 1;
+            } else if ((s & 0xC0) == 0x80) {
+                stride = ((s & 0x3F) << 8) | at(i + 1);
+                i += 2;
+            } else if ((s & 0xE0) == 0xC0) {
+                stride = ((s & 0x1F) << 16) | (at(i + 1) << 8) | at(i + 2);
+                i += 3;
+            } else {
+                stride = ((s & 0x0F) << 24) | (at(i + 1) << 16) | (at(i + 2) << 8) | at(i + 3);
+                i += 4;
+            }
+        }
+        if (code) lit += stride;
     }
-    const int resX = layers.empty() ? 0 : layers.front().width();
-    const int resY = layers.empty() ? 0 : layers.front().height();
+    return lit;
+}
+
+namespace {
+
+constexpr qint64 kExtraSize = 76;  // second settings block: <19I, exposures at words 14 and 15
+
+QImage testPreview() {  // red left half, blue right half
+    QImage img(16, 12, QImage::Format_RGB888);
+    for (int y = 0; y < 12; ++y)
+        for (int x = 0; x < 16; ++x) img.setPixelColor(x, y, x < 8 ? QColor(248, 0, 0) : QColor(0, 0, 248));
+    return img;
+}
+
+}  // namespace
+
+QByteArray Writer::bytes() const {
+    QImage small = previewSmall, large = previewLarge;
+    if (small.isNull() && large.isNull()) small = large = testPreview();
+    if (small.isNull()) small = large.scaled(120, 120, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    if (large.isNull()) large = small.scaled(300, 300, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    std::vector<QByteArray> encoded = encodedLayers;
+    if (encoded.empty())
+        for (const QImage &img : layers) encoded.push_back(encodeRle7(img));
+    const int resX = layers.empty() ? width : layers.front().width();
+    const int resY = layers.empty() ? height : layers.front().height();
+    const auto count = static_cast<qint64>(encoded.size());
     const QByteArray name = printer.toLatin1() + '\0';
+    const Params &q = params;
 
     Buffer body;
     body.be32(magic.size());
@@ -431,8 +479,8 @@ void Writer::write(const QString &path) const {
     const qsizetype tailAt = body.data.size();
     body.data.append(QByteArray(kHeaderTailSize, '\0'));
 
-    const QByteArray img = encodeRgb15(thumb);
-    auto placePreview = [&] {
+    auto placePreview = [&](const QImage &thumb, const QByteArray &raw) {
+        const QByteArray img = raw.isEmpty() ? encodeRgb15(thumb) : raw;
         const qsizetype off = body.data.size();
         Buffer p;
         p.u32(thumb.width()), p.u32(thumb.height()), p.u32(off + kPreviewSize), p.u32(img.size());
@@ -440,48 +488,77 @@ void Writer::write(const QString &path) const {
         body.data += p.data + img;
         return off;
     };
-    const qsizetype previewSmall = placePreview();
-    const qsizetype previewLarge = placePreview();
+    const qsizetype previewSmallAt = placePreview(small, encodedPreviewSmall);
+    const qsizetype previewLargeAt = placePreview(large, encodedPreviewLarge);
 
-    const qsizetype paramsOffset = body.data.size();
-    const Params &q = params;
+    const qsizetype paramsAt = body.data.size();
     for (double v : {q.bottomLiftHeight, q.bottomLiftSpeed, q.liftHeight, q.liftSpeed, q.retractSpeed, q.volumeMl,
                      q.weightG, q.cost, q.bottomLightOff, q.lightOff})
         body.f32(v);
-    body.u32(0);
+    body.u32(bottomLayers);
     body.f32(q.exposure);
     body.f32(q.bottomExposure);
     for (int k = 0; k < 4; ++k) body.u32(0);
 
-    const qsizetype tableOffset = body.data.size();
-    body.data.append(QByteArray(kLayerDefSize * static_cast<qsizetype>(layers.size()), '\0'));
-    Buffer table;
-    for (std::size_t n = 0; n < layers.size(); ++n) {
-        const QByteArray data = QByteArray(kLayerDefExSize, '\0') + encodeRle7(layers[n]);
-        const qsizetype address = body.data.size();
-        body.data += data;
-        table.f32(static_cast<double>(n + 1) * layerHeight), table.f32(q.exposure), table.f32(q.lightOff);
-        table.u32(address), table.u32(data.size());
-        for (int k = 0; k < 5; ++k) table.u32(0);
+    const qsizetype extraAt = body.data.size();
+    for (int k = 0; k < 19; ++k) {
+        if (k == 9) body.u32(4);  // always 4 in HALOT BOX and Chitubox files; meaning unknown
+        else if (k == 14) body.f32(q.bottomExposure);
+        else if (k == 15) body.f32(q.exposure);
+        else body.u32(0);
     }
-    body.data.replace(tableOffset, table.data.size(), table.data);
+
+    const qsizetype tableAt = body.data.size();
+    const double pixelArea = resX && resY ? (bed[0] / resX) * (bed[1] / resY) : 0;
+    Buffer table;
+    qint64 address = tableAt + kLayerDefSize * count;
+    for (qint64 n = 0; n < count; ++n) {
+        const bool bottom = n < bottomLayers;
+        const QByteArray &data = encoded[static_cast<std::size_t>(n)];
+        const qint64 size = kLayerDefExSize + data.size();
+        table.f32(static_cast<double>(n + 1) * layerHeight);
+        table.f32(bottom ? q.bottomExposure : q.exposure);
+        table.f32(bottom ? q.bottomLightOff : q.lightOff);
+        table.u32(address), table.u32(size), table.u32(0), table.u32(0);
+        // lit area in mm², rounded down; Chitubox's is slightly larger on anti-aliased layers
+        table.u32(static_cast<qint64>(static_cast<double>(rle7LitPixels(data)) * pixelArea));
+        table.u32(0), table.u32(0);
+        address += size;
+    }
+    body.data += table.data;
+    body.data.reserve(static_cast<qsizetype>(address) + 4);
+    for (qint64 n = 0; n < count; ++n) {
+        const bool bottom = n < bottomLayers;
+        // lift height, lift speed, (2 unused), retract speed, (5 unused), light PWM
+        body.f32(bottom ? q.bottomLiftHeight : q.liftHeight);
+        body.f32(bottom ? q.bottomLiftSpeed : q.liftSpeed);
+        body.u32(0), body.u32(0);
+        body.f32(q.retractSpeed);
+        for (int k = 0; k < 5; ++k) body.u32(0);
+        body.f32(bottom ? bottomLightPwm : lightPwm);
+        body.data += encoded[static_cast<std::size_t>(n)];
+    }
 
     Buffer tail;
     tail.u16(resX), tail.u16(resY);
     tail.f32(bed[0]), tail.f32(bed[1]), tail.f32(bed[2]);
-    tail.f32(static_cast<double>(layers.size()) * layerHeight), tail.f32(layerHeight);
-    tail.u32(bottomLayers), tail.u32(previewSmall), tail.u32(tableOffset), tail.u32(static_cast<qint64>(layers.size()));
-    tail.u32(previewLarge), tail.u32(printTime), tail.u32(0), tail.u32(paramsOffset), tail.u32(kParamsSize);
-    tail.u32(antiAlias), tail.u16(255), tail.u16(255);
-    tail.u32(encrypted ? 1 : 0), tail.u32(0), tail.u32(0);
+    tail.f32(static_cast<double>(count) * layerHeight), tail.f32(layerHeight);
+    tail.u32(bottomLayers), tail.u32(previewSmallAt), tail.u32(tableAt), tail.u32(count);
+    tail.u32(previewLargeAt), tail.u32(printTime), tail.u32(0), tail.u32(paramsAt), tail.u32(kParamsSize);
+    tail.u32(antiAlias), tail.u16(lightPwm), tail.u16(bottomLightPwm);
+    tail.u32(encrypted ? 1 : 0), tail.u32(extraAt), tail.u32(kExtraSize);
     body.data.replace(tailAt, kHeaderTailSize, tail.data);
 
     quint32 crc = footerCrc(body.data);
     if (corruptCrc) crc ^= 1;
     body.be32(crc);
+    return body.data;
+}
 
+void Writer::write(const QString &path) const {
+    const QByteArray data = bytes();
     QSaveFile out(path);
-    if (!out.open(QIODevice::WriteOnly) || out.write(body.data) != body.data.size() || !out.commit())
+    if (!out.open(QIODevice::WriteOnly) || out.write(data) != data.size() || !out.commit())
         throw FormatError(("cannot write " + path + ": " + out.errorString()).toStdString());
 }
 
