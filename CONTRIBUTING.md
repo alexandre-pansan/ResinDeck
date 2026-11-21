@@ -161,6 +161,14 @@ The tests need no printer and no sliced files: `core/tests/fakeprinter.h` is a f
 network protocol (including the error cases), and `cxdlp::Writer` writes small synthetic `.cxdlpv4` files.
 Add a test with every change.
 
+If you have real `.cxdlpv4` files from HALOT BOX or Chitubox, point `RESINDECK_SAMPLE_FILES` at their folder:
+`test_cxdlp` then reads each one, writes it again with `cxdlp::Writer` and checks the result is the same file.
+It is slow in the sanitizer build, so run it from a release build:
+
+```sh
+RESINDECK_SAMPLE_FILES=~/prints QTEST_FUNCTION_TIMEOUT=1800000 build/cpp-release/core/tests/test_cxdlp
+```
+
 Every pull request runs `.github/workflows/ci.yml`:
 - lint (JavaScript and shell syntax);
 - build with warnings as errors and the tests on Linux (with AddressSanitizer and UBSan) and Windows;

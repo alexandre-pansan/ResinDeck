@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
 
 namespace resindeck {
 
@@ -251,5 +252,201 @@ Mesh extractSurface(const SlicedFile &file, const SurfaceOptions &o) {
 }
 
 }  // namespace
+
+// --- as printed --------------------------------------------------------------------------
+
+Mesh printedMesh(const SlicedFile &file, const SurfaceOptions &o) {
+    Mesh m;
+    m.bed = file.bed();
+    const int W = file.width(), H = file.height(), L = file.layerCount();
+    const bool whole = o.pixels == std::array<int, 4>{} && o.layers == std::array<int, 2>{};
+    const int x0 = whole ? 0 : std::clamp(o.pixels[0], 0, W), x1 = whole ? W : std::clamp(o.pixels[2], 0, W);
+    const int y0 = whole ? 0 : std::clamp(o.pixels[1], 0, H), y1 = whole ? H : std::clamp(o.pixels[3], 0, H);
+    const int l0 = whole ? 0 : std::clamp(o.layers[0], 0, L), l1 = whole ? L : std::clamp(o.layers[1], 0, L);
+    if (x1 <= x0 || y1 <= y0 || l1 <= l0) return m;
+    const int bw = x1 - x0, bh = y1 - y0;
+    const auto [pxmm, pymm] = file.pixelMm();
+    const double lh = std::max(file.layerHeight(), 1e-6);
+    m.step = m.layerStep = 1;
+
+    // grid corner -> mm on the plate (y flipped: image rows grow towards the front)
+    auto X = [&](int px) { return float((x0 + px) * pxmm); };
+    auto Y = [&](int py) { return float(m.bed[1] - (y0 + py) * pymm); };
+    auto Z = [&](int layer) { return float(layer * lh); };
+    // a rectangle from corner p along u and v, wound counter-clockwise seen from where n points
+    auto rect = [&](const std::array<float, 3> &p, const std::array<float, 3> &u, const std::array<float, 3> &v,
+                    const std::array<float, 3> &n) {
+        const float cx = u[1] * v[2] - u[2] * v[1], cy = u[2] * v[0] - u[0] * v[2], cz = u[0] * v[1] - u[1] * v[0];
+        const bool flip = cx * n[0] + cy * n[1] + cz * n[2] < 0;
+        const auto &a = flip ? v : u, &b = flip ? u : v;
+        const auto base = static_cast<quint32>(m.vertices.size() / 6);
+        for (const auto &c : {std::array<float, 3>{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}})
+            m.vertices.insert(m.vertices.end(), {p[0] + c[0] * a[0] + c[1] * b[0], p[1] + c[0] * a[1] + c[1] * b[1],
+                                                 p[2] + c[0] * a[2] + c[1] * b[2], n[0], n[1], n[2]});
+        m.indices.insert(m.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+    };
+    auto full = [&] { return m.indices.size() / 3 > o.maxTriangles; };
+
+    // walls are merged along their edge within a layer, then across layers while they stay the same:
+    // key = kind (x or y wall) | facing | position | from | to, value = first layer
+    auto wallKey = [](quint64 kind, quint64 facing, quint64 at, quint64 from, quint64 to) {
+        return (kind << 63) | (facing << 62) | (at << 42) | (from << 21) | to;
+    };
+    std::unordered_map<quint64, int> open, next;
+    auto emitWall = [&](quint64 key, int z0, int z1) {
+        const bool yWall = key >> 63, facing = (key >> 62) & 1;
+        const int at = int((key >> 42) & 0xFFFFF), from = int((key >> 21) & 0x1FFFFF), to = int(key & 0x1FFFFF);
+        const float zb = Z(z0), dz = Z(z1) - zb;
+        if (!yWall)  // between columns at-1 and at, rows from..to; facing: solid on the left, faces +x
+            rect({X(at), Y(from), zb}, {0, Y(to) - Y(from), 0}, {0, 0, dz}, {facing ? 1.f : -1.f, 0, 0});
+        else  // between rows at-1 and at, columns from..to; facing: solid above (row at-1), faces +row = -y
+            rect({X(from), Y(at), zb}, {X(to) - X(from), 0, 0}, {0, 0, dz}, {0, facing ? -1.f : 1.f, 0});
+    };
+
+    // flat faces between two layers, merged into rectangles: runs of the same kind in each row,
+    // extended down the rows while they repeat; kind 1 = top of the layer below, 2 = bottom of the one above
+    struct Run {
+        int x0, x1, kind, y0;
+    };
+    auto caps = [&](const std::vector<quint8> &below, const std::vector<quint8> &above, int layer) {
+        std::vector<Run> prev, cur;
+        auto closeRun = [&](const Run &r, int yEnd) {
+            rect({X(r.x0), Y(r.y0), Z(layer)}, {X(r.x1) - X(r.x0), 0, 0}, {0, Y(yEnd) - Y(r.y0), 0},
+                 {0, 0, r.kind == 1 ? 1.f : -1.f});
+        };
+        for (int y = 0; y <= bh; ++y) {
+            cur.clear();
+            const quint8 *b = below.data() + std::size_t(y) * std::size_t(bw), *a = above.data() + std::size_t(y) * std::size_t(bw);
+            if (y < bh && std::memcmp(a, b, std::size_t(bw)) != 0) {
+                for (int x = 0; x < bw;) {
+                    const int kind = b[x] == a[x] ? 0 : b[x] ? 1 : 2;
+                    int e = x + 1;
+                    while (e < bw && (b[e] == a[e] ? 0 : b[e] ? 1 : 2) == kind) ++e;
+                    if (kind) cur.push_back({x, e, kind, y});
+                    x = e;
+                }
+            }
+            std::size_t j = 0;  // both lists are sorted by x0: carry on the runs that repeat
+            for (Run &r : cur) {
+                while (j < prev.size() && prev[j].x0 < r.x0) closeRun(prev[j], y), ++j;
+                if (j < prev.size() && prev[j].x0 == r.x0 && prev[j].x1 == r.x1 && prev[j].kind == r.kind) r.y0 = prev[j++].y0;
+            }
+            for (; j < prev.size(); ++j) closeRun(prev[j], y);
+            std::swap(prev, cur);
+        }
+    };
+
+    // per layer, in parallel: solid (1) / empty (0) pixels over the model's box, and its walls merged
+    // along their edge (keys as above)
+    struct Layer {
+        std::vector<quint8> mask;
+        std::vector<quint64> walls;
+    };
+    auto readLayer = [&](int layer) {
+        Layer out;
+        out.mask.assign(std::size_t(bw) * std::size_t(bh), 0);
+        const QImage img = layer >= l0 && layer < l1 ? file.layer(layer) : QImage();
+        if (img.isNull()) return out;
+        std::vector<char> any(std::size_t(bh) + 1, 0);
+        for (int y = 0; y < bh; ++y) {
+            const uchar *row = img.constScanLine(y0 + y) + x0;
+            quint8 *dst = out.mask.data() + std::size_t(y) * std::size_t(bw);
+            char a = 0;
+            for (int x = 0; x < bw; ++x) a |= char(dst[x] = row[x] > kIso);
+            any[std::size_t(y)] = a;
+        }
+        auto row = [&](int y) { return out.mask.data() + std::size_t(y) * std::size_t(bw); };
+        // x walls (between columns), found row by row and carried down the rows while they repeat
+        struct Edge {
+            int x;
+            bool facing;
+            int y0;
+        };
+        std::vector<Edge> prev, cur;
+        for (int y = 0; y <= bh; ++y) {
+            cur.clear();
+            if (y < bh && any[std::size_t(y)]) {
+                const quint8 *r = row(y);
+                for (int x = 0; x <= bw; ++x) {
+                    const bool l = x > 0 && r[x - 1], here = x < bw && r[x];
+                    if (l != here) cur.push_back({x, l, y});
+                }
+            }
+            std::size_t j = 0;
+            for (Edge &e : cur) {
+                while (j < prev.size() && prev[j].x < e.x) {
+                    out.walls.push_back(wallKey(0, prev[j].facing, quint64(prev[j].x), quint64(prev[j].y0), quint64(y)));
+                    ++j;
+                }
+                if (j < prev.size() && prev[j].x == e.x && prev[j].facing == e.facing) e.y0 = prev[j++].y0;
+            }
+            for (; j < prev.size(); ++j)
+                out.walls.push_back(wallKey(0, prev[j].facing, quint64(prev[j].x), quint64(prev[j].y0), quint64(y)));
+            std::swap(prev, cur);
+        }
+        // y walls (between rows), in runs along the row
+        for (int y = 0; y <= bh; ++y) {
+            const bool hasUp = y > 0 && any[std::size_t(y - 1)], hasDown = y < bh && any[std::size_t(y)];
+            if (!hasUp && !hasDown) continue;
+            const quint8 *up = hasUp ? row(y - 1) : nullptr, *down = hasDown ? row(y) : nullptr;
+            if (up && down && std::memcmp(up, down, std::size_t(bw)) == 0) continue;
+            for (int x = 0; x < bw;) {
+                const bool u = up && up[x], d = down && down[x];
+                if (u == d) {
+                    ++x;
+                    continue;
+                }
+                int e = x + 1;
+                while (e < bw && bool(up && up[e]) == u && bool(down && down[e]) == d) ++e;
+                out.walls.push_back(wallKey(1, u, quint64(y), quint64(x), quint64(e)));
+                x = e;
+            }
+        }
+        return out;
+    };
+
+    constexpr int kBatch = 32;
+    std::vector<Layer> batch;
+    int batchStart = l0;
+    std::vector<quint8> below(std::size_t(bw) * std::size_t(bh), 0);
+    Layer cur;
+    for (int k = l0; k <= l1; ++k) {
+        if (o.cancel && o.cancel->load()) return {};
+        if (k < l1) {
+            if (k >= batchStart + int(batch.size())) {  // read the next layers in parallel
+                batchStart = k;
+                QList<int> list;
+                for (int n = k; n < std::min(k + kBatch, l1); ++n) list << n;
+                batch = QtConcurrent::blockingMapped<std::vector<Layer>>(list, readLayer);
+            }
+            cur = std::move(batch[std::size_t(k - batchStart)]);
+        } else {
+            cur = {std::vector<quint8>(below.size(), 0), {}};  // above the last layer
+        }
+        caps(below, cur.mask, k);
+        if (full()) break;
+
+        // walls: those that continue from the layer below keep their first layer
+        next.clear();
+        for (quint64 key : cur.walls) {
+            const auto it = open.find(key);
+            next.emplace(key, it != open.end() ? it->second : k);
+        }
+        for (const auto &[key, z0] : open)
+            if (!next.count(key)) emitWall(key, z0, k);
+        std::swap(open, next);
+        if (full()) break;
+        below = std::move(cur.mask);
+        if (o.progress && (k - l0) % 8 == 0) o.progress(double(k - l0) / (l1 - l0 + 1));
+    }
+    if (full()) {
+        Mesh large;
+        large.bed = m.bed;
+        large.tooLarge = true;
+        return large;
+    }
+    for (std::size_t i = 2; i < m.vertices.size(); i += 6) m.top = std::max(m.top, double(m.vertices[i]));
+    return m;
+}
 
 }  // namespace resindeck

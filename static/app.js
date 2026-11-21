@@ -145,6 +145,7 @@ function renderPrinters() {
       el("div", { class: "printer-state" }, v.label, p.version ? el("span", { class: "muted small" }, `  · fw ${p.version}`) : null),
       fname ? el("div", { class: "printer-file", title: fname },
         local ? el("a", { onclick: () => openFile(local, p.id) }, fname) : fname) : null,
+      fname && v.active && !local && state.local ? el("div", { class: "muted small", title: t("printers.notInLibraryTitle") }, t("printers.notInLibrary")) : null,
       v.total ? [
         el("div", { class: "progress" }, el("div", { style: `width:${(v.cur * 100) / v.total}%` })),
         el("div", { class: "progress-text" },
@@ -165,7 +166,8 @@ function renderPrinters() {
           el("button", { class: "small danger", onclick: () => printerAction(p, "stop") }, t("printers.stop")),
         ] : null,
         v.active && local && state.follow !== p.id
-          ? el("button", { class: "small", onclick: () => openFile(local, p.id) }, t("printers.follow")) : null,
+          ? el("button", { class: "small", title: t("printers.followTitle"), onclick: () => openFile(local, p.id) },
+            t("printers.follow")) : null,
         state.local ? el("button", { class: "ghost small", title: t("printers.configureTitle"),
           onclick: () => openPrinterDialog(p) }, t("printers.configure")) : null),
     );

@@ -96,7 +96,7 @@ Everything the Python version does, in C++.
 - [x] Command line, like today's `resindeck.py` (`resindeck-cli`)
 - [ ] Packages: AppImage (`linuxdeploy` with the Qt plugin) and a Windows installer (`windeployqt`, Inno Setup)
   - [x] install rules, packaging scripts and a CI job that builds and starts both
-  - [ ] first successful CI run
+  - [x] first successful CI run
   - [ ] tested on a real Windows machine
 - [x] Port the tests: fake HALOT, synthetic `.cxdlpv4` files, server security tests
 
@@ -113,6 +113,9 @@ The Python code moved to the `legacy` branch, and the release workflow publishes
 - [ ] Resin profiles: layer height, exposure, bottom layers, lift and retract speeds, wait times
 - [ ] GPU slicing into layer images; anti-aliasing; image blur
 - [ ] `.cxdlpv4` writer
+  - [x] the same layout as HALOT BOX and Chitubox files: both previews, print settings, per-layer lift
+    settings and area; 27 real files rewritten byte for byte (`RESINDECK_SAMPLE_FILES`)
+  - [ ] a file written by ResinDeck printed on the HALOT-R6
 - [ ] Layer viewer: slider, layer image, model cross-section
 - [ ] Estimates: print time, resin volume, weight and cost
 - [ ] Send to the printer and start, as today

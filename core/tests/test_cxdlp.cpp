@@ -2,10 +2,14 @@
 #include "formats/cxdlp.h"
 #include "formats/sliced.h"
 
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QtEndian>
+
+#include <cstring>
 
 using namespace resindeck;
 
@@ -22,6 +26,19 @@ std::vector<QImage> layerImages(int resX = 60, int resY = 40, int count = 12) {
         images.push_back(img);
     }
     return images;
+}
+
+// The encoded bytes of a file's preview `index` (0 small, 1 large), straight from the file.
+QByteArray rawPreview(const QString &path, int index) {
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return {};
+    const QByteArray d = f.readAll();
+    auto u32At = [&](qsizetype at) { return static_cast<qsizetype>(qFromLittleEndian<quint32>(d.constData() + at)); };
+    const qsizetype magic = qFromBigEndian<quint32>(d.constData());
+    const qsizetype nameAt = 4 + magic + 2;
+    const qsizetype tail = nameAt + 4 + static_cast<qsizetype>(qFromBigEndian<quint32>(d.constData() + nameAt));
+    const qsizetype preview = u32At(tail + (index ? 40 : 28));
+    return d.mid(u32At(preview + 8), u32At(preview + 12));
 }
 
 // The file stores 32-bit floats.
@@ -190,6 +207,109 @@ private slots:
         QVERIFY(!cxdlp::isPixelPair(QByteArray("\x80\x05", 2), 4, 1));  // run longer than the row
         QVERIFY(!cxdlp::isPixelPair(QByteArray("\x80", 1), 3, 1));      // odd width
         QVERIFY(!cxdlp::isPixelPair(QByteArray("\x80", 1), 4, 2));      // does not cover the image
+    }
+
+    void layerTableAndLiftSettings() {
+        // bottom layers (2) get the bottom exposure, light-off time and lift; the table stores the lit area
+        const cxdlp::File c(sliced);
+        const auto &l = c.layers();
+        QVERIFY(near(l[0].exposure, 30.0) && near(l[1].exposure, 30.0) && near(l[2].exposure, 2.5));
+        QVERIFY(near(l[0].lightOff, 1.0) && near(l[2].lightOff, 0.5));
+        QFile f(sliced);
+        QVERIFY(f.open(QIODevice::ReadOnly));
+        const QByteArray data = f.readAll();
+        auto f32At = [&](qint64 at) { return static_cast<double>(qFromLittleEndian<float>(data.constData() + at)); };
+        auto u32At = [&](qint64 at) { return qFromLittleEndian<quint32>(data.constData() + at); };
+        QCOMPARE(f32At(l[0].address), 5.0);  // bottom lift height
+        QCOMPARE(f32At(l[2].address), 4.0);  // lift height
+        QCOMPARE(f32At(l[2].address + 4), 90.0);
+        QCOMPARE(f32At(l[2].address + 16), 150.0);
+        QCOMPARE(f32At(l[2].address + 40), 255.0);
+        // layer 0: a 20 x 20 px box of 0.1 x 0.1 mm = 4 mm²; the table entry's 8th word
+        const qint64 tableAt = l[0].address - 40 * static_cast<qint64>(l.size());
+        QCOMPARE(u32At(tableAt + 28), 4u);
+    }
+
+    void rle7LitPixels() {
+        QImage img(10, 2, QImage::Format_Grayscale8);
+        img.fill(0);
+        std::memset(img.scanLine(0), 255, 6);
+        img.scanLine(1)[0] = 127;  // gray pixels count too
+        QCOMPARE(cxdlp::rle7LitPixels(cxdlp::encodeRle7(img)), 7);
+    }
+
+    // Real files from HALOT BOX and Chitubox, rewritten from what the reader gives, come out byte for byte the
+    // same. Needs RESINDECK_SAMPLE_FILES: a folder of .cxdlpv4 files (they are not in the repository).
+    void rewritesRealFilesExactly() {
+        const QString folder = qEnvironmentVariable("RESINDECK_SAMPLE_FILES");
+        if (folder.isEmpty()) QSKIP("set RESINDECK_SAMPLE_FILES to a folder of .cxdlpv4 files");
+        const QFileInfoList files = QDir(folder).entryInfoList({"*.cxdlpv4"}, QDir::Files, QDir::Size | QDir::Reversed);
+        QVERIFY(!files.isEmpty());
+        for (const QFileInfo &fi : files) {
+            const cxdlp::File c(fi.filePath());
+            cxdlp::Writer w;
+            w.printer = c.printer();
+            w.bed = c.bed();
+            w.layerHeight = c.layerHeight();
+            w.bottomLayers = c.bottomLayers();
+            w.printTime = c.printTime();
+            w.antiAlias = c.antiAlias();
+            w.params = c.params();
+            // previews: Chitubox splits runs by the colors before they are reduced to 15 bits, so ours
+            // differ in bytes; they must give the same image, and the original bytes are written as they are
+            for (int k : {0, 1}) {
+                const QImage img = c.preview(k);
+                QCOMPARE(cxdlp::decodeRgb15(cxdlp::encodeRgb15(img), img.width(), img.height()), img);
+            }
+            w.previewSmall = c.preview(0);
+            w.previewLarge = c.preview(1);
+            w.encodedPreviewSmall = rawPreview(fi.filePath(), 0);
+            w.encodedPreviewLarge = rawPreview(fi.filePath(), 1);
+            w.width = c.width();
+            w.height = c.height();
+            for (int n = 0; n < c.layerCount(); ++n) {
+                const QByteArray data = c.layerData(n);
+                // our encoding gives the same image; its bytes can differ, as Chitubox sometimes splits a
+                // run where two parts of the model meet
+                const QImage img = c.layer(n);
+                QCOMPARE(cxdlp::decodeRle7(cxdlp::encodeRle7(img), img.width(), img.height()), img);
+                w.encodedLayers.push_back(data);
+            }
+            QFile f(fi.filePath());
+            QVERIFY(f.open(QIODevice::ReadOnly));
+            const QByteArray original = f.readAll();
+            QByteArray ours = w.bytes();
+            // the lit area may differ slightly on anti-aliased layers: within 0.5%, take Chitubox's value
+            const auto &layers = c.layers();
+            const qint64 tableAt = layers.empty() ? 0 : layers[0].address - 40 * static_cast<qint64>(layers.size());
+            for (std::size_t n = 0; n < layers.size() && ours.size() == original.size(); ++n) {
+                const qsizetype at = static_cast<qsizetype>(tableAt + 40 * static_cast<qint64>(n) + 28);
+                const double theirs = qFromLittleEndian<quint32>(original.constData() + at);
+                const double mine = qFromLittleEndian<quint32>(ours.constData() + at);
+                if (std::abs(theirs - mine) <= 1 + theirs * 0.005) std::memcpy(ours.data() + at, original.constData() + at, 4);
+            }
+            // the second settings block has the exposures at words 14 and 15; one file of 27, from an older
+            // Chitubox, has them at words 13 and 14
+            if (ours.size() == original.size()) {
+                const qsizetype magic = qFromBigEndian<quint32>(original.constData());
+                const qsizetype nameAt = 4 + magic + 2;
+                const qsizetype tail = nameAt + 4 + static_cast<qsizetype>(qFromBigEndian<quint32>(original.constData() + nameAt));
+                const qsizetype word13 = qFromLittleEndian<quint32>(original.constData() + tail + 72) + 13 * 4;
+                if (original.mid(word13, 8) == ours.mid(word13 + 4, 8)) std::memcpy(ours.data() + word13, original.constData() + word13, 12);
+            }
+            const qsizetype end = ours.size() - 4;  // the checksum covers the areas too
+            if (ours.size() == original.size()) {
+                const QByteArray crc = original.right(4);
+                std::memcpy(ours.data() + end, crc.constData(), 4);
+            }
+            if (ours != original) {
+                qsizetype at = 0;
+                while (at < std::min(ours.size(), original.size()) && ours[at] == original[at]) ++at;
+                QFAIL(qPrintable(QString("%1: first difference at byte %2 of %3 (ours %4 bytes)")
+                                     .arg(fi.fileName()).arg(at).arg(original.size()).arg(ours.size())));
+            }
+            qInfo("identical: %s (%d layers)", qPrintable(fi.fileName()), c.layerCount());
+        }
     }
 
     void unsupportedExtension() {

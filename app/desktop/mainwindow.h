@@ -8,6 +8,7 @@
 #include "widgets.h"
 
 #include <QFileSystemWatcher>
+#include <QHash>
 #include <QMainWindow>
 #include <QTimer>
 
@@ -42,6 +43,8 @@ private:
     void buildUi();
     void retranslate();
     void refreshPrinters();
+    void startFollowing(Printer *printer, const QString &path);
+    void updateFollow();
     void refreshLibrary();
     void refreshSendButtons();
     void showLayer(int index);
@@ -73,11 +76,15 @@ private:
     ImageView *layerView_, *thumbView_;
     QLabel *meshing_;
     QSlider *layerSlider_;
-    QLabel *layerLabel_, *layerValue_;
+    QLabel *layerLabel_, *layerValue_, *followBadge_;
     QGridLayout *stats_;
     QComboBox *target_;
     QPushButton *send_, *sendPrint_;
 
+    QHash<QString, QString> libraryByName_;  // file name -> path, the newest of each name
+    QString follow_;      // the printer whose print the window follows: the slider stays on its layer
+    bool followMove_ = false;  // the slider is moved by following, not by the user
+    bool followPending_ = false;  // follow the open file as soon as a printer reports printing it
     QString path_;        // the open file
     QJsonObject info_;    // its header values
     QJsonArray layerZ_;
