@@ -125,6 +125,56 @@ private slots:
         QVERIFY(measure(coarse).closed);
     }
 
+    void printedBoxIsSixRectangles() {
+        // straight walls merge across all the layers: 4 walls, the top and the bottom
+        const Mesh m = printedMesh(cxdlp::File(writeBox(dir.filePath("box.cxdlpv4"))));
+        QCOMPARE(m.indices.size() / 3, std::size_t(12));
+        const Stats s = measure(m);
+        QVERIFY(std::abs(s.minX - 2.0) < 1e-5 && std::abs(s.maxX - 4.0) < 1e-5);
+        QVERIFY(std::abs(s.minY - 1.0) < 1e-5 && std::abs(s.maxY - 3.0) < 1e-5);
+        QVERIFY(std::abs(s.minZ) < 1e-5 && std::abs(s.maxZ - 0.6) < 1e-5);
+        QVERIFY2(std::abs(s.volume - 2.4) < 1e-4, qPrintable(QString::number(s.volume)));  // outward normals
+        QVERIFY(std::abs(m.top - 0.6) < 1e-5);
+        QVERIFY(!m.tooLarge);
+    }
+
+    void printedVolumeIsExact() {
+        // a stepped pyramid with a hole through it: the volume is the lit pixels times pixel x layer
+        cxdlp::Writer w;
+        qint64 lit = 0;
+        for (int n = 0; n < 10; ++n) {
+            QImage img(60, 40, QImage::Format_Grayscale8);
+            img.fill(0);
+            for (int y = 5 + n; y < 35 - n; ++y)
+                for (int x = 10 + n; x < 50 - n; ++x)
+                    if (!(x >= 28 && x < 32 && y >= 18 && y < 22)) {
+                        img.scanLine(y)[x] = 255;
+                        ++lit;
+                    }
+            img.scanLine(2)[2 + n] = 255;  // and a pixel that moves every layer
+            ++lit;
+            w.layers.push_back(img);
+        }
+        w.write(dir.filePath("pyramid.cxdlpv4"));
+        const Mesh m = printedMesh(cxdlp::File(dir.filePath("pyramid.cxdlpv4")));
+        const double expected = double(lit) * 0.1 * 0.1 * 0.05;
+        QVERIFY2(std::abs(measure(m).volume - expected) < 1e-4, qPrintable(QString("%1 %2").arg(measure(m).volume).arg(expected)));
+    }
+
+    void printedHalfGrayIsSolid() {
+        // gray 200 (above half) is printed: the box is one pixel wider
+        const Stats s = measure(printedMesh(cxdlp::File(writeBox(dir.filePath("g.cxdlpv4"), 200))));
+        QVERIFY(std::abs(s.maxX - 4.1) < 1e-5);
+    }
+
+    void printedOverTheLimitIsTooLarge() {
+        SurfaceOptions o;
+        o.maxTriangles = 8;
+        const Mesh m = printedMesh(cxdlp::File(writeBox(dir.filePath("box.cxdlpv4"))), o);
+        QVERIFY(m.tooLarge);
+        QVERIFY(m.empty());
+    }
+
     void boundsFromTheVoxelGrid() {
         const cxdlp::File f(writeBox(dir.filePath("box.cxdlpv4")));
         SurfaceOptions o;

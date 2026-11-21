@@ -12,11 +12,12 @@ place, growing to more brands and systems with help from the community.
 [Leia em português](README.pt-BR.md)
 
 - **Desktop application** for Linux and Windows:
-  - 3D view rebuilt from the layers of the sliced file, drawn by the graphics card, smooth and detailed down
-    to the pixel, cut at any layer
+  - 3D view rebuilt from the layers of the sliced file and drawn by the graphics card: exactly as printed,
+    pixel by pixel and layer by layer (large models as a smooth surface), cut at any layer
   - layer-by-layer viewer and the slicer thumbnail, print time, resin and exposure settings
   - printer manager: several printers, network search, live status with layer, time left, start time and
     expected end
+  - follow a print in 3D, cut at the layer being printed, when its file is in your library
   - send, send and print, pause/resume, stop, with upload progress
 - **Phone and browser access** on your network, with a QR code and a PIN, to follow and control prints.
 - **Command line** (`resindeck-cli`) for scripts and quick jobs.
@@ -137,8 +138,9 @@ give a token error, also with HALOT BOX.
 ## How it works
 
 ResinDeck is written in C++ with Qt. Each printer family is a driver, so adding a brand means writing one
-class; see [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand). The 3D view extracts a surface
-from the layer images themselves, using their anti-aliasing to place the edges between pixels.
+class; see [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand). The 3D view draws the outside faces
+of the printed pixels, layer by layer, merging neighbouring faces; for models too large for that, it extracts
+a smooth surface from the layer images, using their anti-aliasing to place the edges between pixels.
 
 The HALOT protocol is a WebSocket on port 18188 with JSON commands and a DES-based token; uploads
 go in compressed 1 MiB chunks. Everything known about it is in [docs/PROTOCOL.md](docs/PROTOCOL.md).

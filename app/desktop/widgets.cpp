@@ -83,7 +83,6 @@ PrinterCard::PrinterCard(Printer *printer, FindFile findFile, QWidget *parent)
     file_->setTextInteractionFlags(Qt::TextSelectableByMouse);
     notInLibrary_ = new QLabel;
     notInLibrary_->setObjectName("small");
-    notInLibrary_->setWordWrap(true);
     follow_ = new QPushButton;
     follow_->setObjectName("link");
     follow_->setCursor(Qt::PointingHandCursor);
@@ -250,6 +249,7 @@ void PrinterCard::refresh() {
     follow_->setToolTip(t("printers.followTitle"));
     follow_->setVisible(active && inLibrary && !following_);
     notInLibrary_->setText(t("printers.notInLibrary"));
+    notInLibrary_->setToolTip(t("printers.notInLibraryTitle"));
     notInLibrary_->setVisible(active && !file.isEmpty() && !inLibrary);
     configure_->setText(t("printers.configure"));
     configure_->setToolTip(t("printers.configureTitle"));

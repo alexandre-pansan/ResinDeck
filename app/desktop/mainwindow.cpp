@@ -507,8 +507,9 @@ void MainWindow::openFile(const QString &path) {
                              if (thumb) thumb->setImage(f.result());
                          });
 
-    // 3D, in two steps: the voxel grid (cached, shared with the web interface) right away, then a
-    // smooth surface through the layers themselves, which replaces it when ready
+    // 3D, in two steps: the voxel grid (cached, shared with the web interface) right away, then the
+    // model as printed (pixel by layer), or for models too large for that a smooth surface through
+    // the layers, which replaces it when ready
     if (surfaceCancel_) surfaceCancel_->store(true);
     surfaceCancel_ = std::make_shared<std::atomic<bool>>(false);
     surfaceShown_ = false;
@@ -543,16 +544,24 @@ void MainWindow::openFile(const QString &path) {
                         if (label) label->setText(t("viewer.meshing") + QString(" %1%").arg(qRound(fraction * 100)));
                     });
                 };
-                return surfaceMesh(*sliced, o);
+                o.maxTriangles = 6'000'000;  // about 360 MB on the GPU
+                Mesh printed = printedMesh(*sliced, o);
+                if (!printed.tooLarge || cancel->load()) return printed;
+                o.maxTriangles = SurfaceOptions{}.maxTriangles;
+                Mesh smooth = surfaceMesh(*sliced, o);
+                smooth.tooLarge = true;  // tells the window it is the smooth one
+                return smooth;
             },
             [this, path, cancel](QFuture<Mesh> f) {
                 if (path != path_ || cancel->load()) return;
                 Mesh m = f.result();
+                const bool smooth = m.tooLarge;
                 if (!m.empty()) {
                     viewer_->setMesh(std::move(m), true);
                     surfaceShown_ = true;
                 }
-                meshing_->setVisible(false);
+                meshing_->setText(smooth ? t("viewer.smoothed") : QString());
+                meshing_->setVisible(smooth);
             });
     });
     refreshSendButtons();

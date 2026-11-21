@@ -1,7 +1,9 @@
 // Triangle meshes of a sliced file, for the 3D view.
 //
-// Two kinds:
+// Three kinds:
 // - voxelMesh(): the outside faces of the coarse voxel grid. Instant, blocky.
+// - printedMesh(): the model as printed: one block per pixel and layer, exactly, drawn by its outside
+//   faces (neighbouring faces merged). Exact, but too large for big organic models.
 // - surfaceMesh(): a smooth surface through the layer images themselves (naive surface nets). The
 //   layers' anti-aliasing places the edge between pixels, so the mesh follows the printed shape
 //   within a fraction of a pixel. It reads the layers two at a time, so memory stays small.
@@ -24,6 +26,7 @@ struct Mesh {
     int step = 0;      // surfaceMesh: pixels per sample in x and y
     int layerStep = 0; // surfaceMesh: layers per sample in z
     qint64 samples = 0; // surfaceMesh: samples visited
+    bool tooLarge = false;  // printedMesh: over SurfaceOptions::maxTriangles, so empty
     bool empty() const { return indices.empty(); }
     std::size_t vertexCount() const { return vertices.size() / 6; }
 };
@@ -48,5 +51,9 @@ struct SurfaceOptions {
 void modelBounds(const SlicedFile &file, const Voxels &voxels, SurfaceOptions &options);
 
 Mesh surfaceMesh(const SlicedFile &file, const SurfaceOptions &options = {});
+
+// The model as printed (pixels above half gray are solid). Uses pixels, layers, maxTriangles, progress
+// and cancel from the options; over maxTriangles it stops and returns an empty mesh with tooLarge set.
+Mesh printedMesh(const SlicedFile &file, const SurfaceOptions &options = {});
 
 }  // namespace resindeck

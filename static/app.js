@@ -145,7 +145,7 @@ function renderPrinters() {
       el("div", { class: "printer-state" }, v.label, p.version ? el("span", { class: "muted small" }, `  · fw ${p.version}`) : null),
       fname ? el("div", { class: "printer-file", title: fname },
         local ? el("a", { onclick: () => openFile(local, p.id) }, fname) : fname) : null,
-      fname && v.active && !local && state.local ? el("div", { class: "muted small" }, t("printers.notInLibrary")) : null,
+      fname && v.active && !local && state.local ? el("div", { class: "muted small", title: t("printers.notInLibraryTitle") }, t("printers.notInLibrary")) : null,
       v.total ? [
         el("div", { class: "progress" }, el("div", { style: `width:${(v.cur * 100) / v.total}%` })),
         el("div", { class: "progress-text" },

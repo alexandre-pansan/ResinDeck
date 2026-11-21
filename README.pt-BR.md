@@ -12,11 +12,13 @@ para outras marcas e sistemas com a ajuda da comunidade.
 [Read in English](README.md)
 
 - **Programa para Linux e Windows:**
-  - visualização 3D montada a partir das camadas do arquivo fatiado, desenhada pela placa de vídeo, suave e
-    detalhada até o pixel, com corte em qualquer camada
+  - visualização 3D montada a partir das camadas do arquivo fatiado e desenhada pela placa de vídeo:
+    exatamente como imprime, pixel a pixel e camada a camada (modelos grandes com a superfície suavizada),
+    com corte em qualquer camada
   - visualizador camada por camada e a miniatura do fatiador, tempo de impressão, resina e exposição
   - gerenciador de impressoras: várias impressoras, busca na rede, status ao vivo com camada, tempo
     restante, hora de início e término previsto
+  - acompanhar a impressão em 3D, cortada na camada que está imprimindo, quando o arquivo está na biblioteca
   - enviar, enviar e imprimir, pausar/retomar, parar, com o progresso do envio
 - **Acesso pelo celular e pelo navegador** na sua rede, com QR code e PIN, para acompanhar e controlar a
   impressão.
@@ -141,8 +143,9 @@ impressora, mas elas dão erro de token, inclusive no HALOT BOX.
 
 O ResinDeck é escrito em C++ com Qt. Cada família de impressora é um driver, então adicionar uma marca é
 escrever uma única classe; veja [Adding a printer brand](CONTRIBUTING.md#adding-a-printer-brand) (em
-inglês). O 3D extrai uma superfície das próprias imagens das camadas, usando o antialiasing delas para
-posicionar as bordas entre os pixels.
+inglês). O 3D desenha as faces externas dos pixels impressos, camada a camada, juntando as faces vizinhas;
+para modelos grandes demais para isso, extrai uma superfície suave das imagens das camadas, usando o
+antialiasing delas para posicionar as bordas entre os pixels.
 
 O protocolo da HALOT é um WebSocket na porta 18188 com comandos JSON e um token baseado em DES; os envios
 vão em blocos comprimidos de 1 MiB. Tudo o que se sabe sobre ele está em
