@@ -190,6 +190,7 @@ void MainWindow::buildUi() {
     auto *srow = new QHBoxLayout(sliderRow);
     layerLabel_ = new QLabel;
     layerSlider_ = new QSlider(Qt::Horizontal);
+    layerSlider_->setObjectName("layerSlider");
     layerValue_ = new QLabel;
     layerValue_->setObjectName("mono");
     followBadge_ = new QLabel;
@@ -351,13 +352,13 @@ void MainWindow::send(bool print) {
                                        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     auto *watcher = new QFutureWatcher<QJsonObject>(this);
-    connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [this, watcher, print, printer, id = p->id()] {
+    connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [this, watcher, print, printer] {
         watcher->deleteLater();
         try {
             watcher->result();
             status(t(print ? "send.sentPrinting" : "send.sent", {{"printer", printer}}));
-            if (print) {
-                follow_ = id;
+            if (print) {  // follow it once the printer reports printing it (the upload ends first)
+                followPending_ = true;
                 updateFollow();
             }
         } catch (...) {
@@ -587,16 +588,22 @@ void MainWindow::startFollowing(Printer *printer, const QString &path) {
 
 // Keeps the slider, and so the 3D cut, on the layer being printed; stops when the print ends.
 void MainWindow::updateFollow() {
-    if (follow_.isEmpty() && followPending_ && !path_.isEmpty())
-        for (Printer *printer : deck_.printers()) {
-            const QJsonObject j = printer->toJson();
-            if (j.value("online").toBool() && !printerReady(j) &&
-                j.value("status").toObject().value("file").toString() == QFileInfo(path_).fileName()) {
-                follow_ = printer->id();
-                followPending_ = false;
-                break;
-            }
+    // follow a printer printing the open file: right after the file was opened (followPending_), or
+    // whenever a printer starts printing it, even if the slider was moved before
+    const QString open = path_.isEmpty() ? QString() : QFileInfo(path_).fileName();
+    for (Printer *printer : deck_.printers()) {
+        const QJsonObject j = printer->toJson();
+        const QString file = j.value("online").toBool() && !printerReady(j) ? j.value("status").toObject().value("file").toString() : QString();
+        // the print's start time tells a new print of the same file even if the pause between them was missed
+        const QJsonObject job = j.value("job").toObject();
+        const QString print = file.isEmpty() ? QString() : file + '@' + QString::number(job.value("file").toString() == file ? job.value("started").toDouble() : 0, 'f', 3);
+        const bool started = printingFile_.value(printer->id()) != print;
+        printingFile_.insert(printer->id(), print);
+        if (follow_.isEmpty() && !open.isEmpty() && file == open && (followPending_ || started)) {
+            follow_ = printer->id();
+            followPending_ = false;
         }
+    }
     Printer *p = follow_.isEmpty() ? nullptr : deck_.printer(follow_);
     const QJsonObject j = p ? p->toJson() : QJsonObject();
     const QJsonObject st = j.value("status").toObject();
