@@ -48,6 +48,21 @@ check_system() {
         die "Qt needs the OpenGL development files. On Debian and Ubuntu: sudo apt install libgl-dev libegl-dev"
 }
 
+# How many files to compile at once: one per core, but at most one per GB of free memory (a compile
+# with sanitizers takes about 800 MB; too many at once can exhaust the memory). JOBS overrides it.
+jobs() {
+    if [ -n "${JOBS:-}" ]; then
+        echo "$JOBS"
+        return
+    fi
+    cores=$(nproc 2>/dev/null || echo 2)
+    free_gb=$(awk '/MemAvailable/ { print int($2 / 1048576) }' /proc/meminfo 2>/dev/null || echo 2)
+    n=$cores
+    [ "$free_gb" -lt "$n" ] && n=$free_gb
+    [ "$n" -lt 1 ] && n=1
+    echo "$n"
+}
+
 # sh has no local variables: the names here must not be used by the functions it calls
 build() {  # build DIR TYPE [extra cmake options...]
     build_dir=$1 build_type=$2
@@ -58,7 +73,7 @@ build() {  # build DIR TYPE [extra cmake options...]
     check_system
     echo "Qt: $QT_DIR"
     cmake -B "$build_dir" -G Ninja -DCMAKE_BUILD_TYPE="$build_type" -DCMAKE_PREFIX_PATH="$QT_DIR" "$@" >/dev/null
-    cmake --build "$build_dir"
+    cmake --build "$build_dir" --parallel "$(jobs)"
 }
 
 # sets cmd (and arg); `set --` inside a function would change only the function's arguments

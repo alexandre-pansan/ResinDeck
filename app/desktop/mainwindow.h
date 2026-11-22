@@ -85,6 +85,7 @@ private:
     QString follow_;      // the printer whose print the window follows: the slider stays on its layer
     bool followMove_ = false;  // the slider is moved by following, not by the user
     bool followPending_ = false;  // follow the open file as soon as a printer reports printing it
+    QHash<QString, QString> printingFile_;  // printer id -> "file@start time" of its print at the last status
     QString path_;        // the open file
     QJsonObject info_;    // its header values
     QJsonArray layerZ_;

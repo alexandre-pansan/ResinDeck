@@ -32,6 +32,10 @@
 
 #include <algorithm>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 namespace resindeck::ui {
 
 namespace {
@@ -46,6 +50,14 @@ void inBackground(QObject *context, Work work, Done done) {
         done(watcher->future());
     });
     watcher->setFuture(QtConcurrent::run(work));
+}
+
+// Gives the memory freed after building a mesh back to the system: glibc keeps it for later otherwise,
+// one pool per worker thread.
+void releaseMemory() {
+#ifdef __GLIBC__
+    malloc_trim(0);
+#endif
 }
 
 QLabel *sectionTitle() {
@@ -190,6 +202,7 @@ void MainWindow::buildUi() {
     auto *srow = new QHBoxLayout(sliderRow);
     layerLabel_ = new QLabel;
     layerSlider_ = new QSlider(Qt::Horizontal);
+    layerSlider_->setObjectName("layerSlider");
     layerValue_ = new QLabel;
     layerValue_->setObjectName("mono");
     followBadge_ = new QLabel;
@@ -351,13 +364,13 @@ void MainWindow::send(bool print) {
                                        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
         return;
     auto *watcher = new QFutureWatcher<QJsonObject>(this);
-    connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [this, watcher, print, printer, id = p->id()] {
+    connect(watcher, &QFutureWatcher<QJsonObject>::finished, this, [this, watcher, print, printer] {
         watcher->deleteLater();
         try {
             watcher->result();
             status(t(print ? "send.sentPrinting" : "send.sent", {{"printer", printer}}));
-            if (print) {
-                follow_ = id;
+            if (print) {  // follow it once the printer reports printing it (the upload ends first)
+                followPending_ = true;
                 updateFollow();
             }
         } catch (...) {
@@ -523,7 +536,8 @@ void MainWindow::openFile(const QString &path) {
             return;
         }
         const Voxels voxels = decodeVoxels(payload);
-        inBackground<Mesh>(this, [voxels] { return voxelMesh(voxels); }, [this, path](QFuture<Mesh> f) {
+        // the quick preview: a million triangles at most (about 60 MB), it is replaced in a few seconds
+        inBackground<Mesh>(this, [voxels] { return voxelMesh(voxels, 1'000'000); }, [this, path](QFuture<Mesh> f) {
             if (path != path_ || surfaceShown_) return;
             viewer_->setMesh(f.result());
             showLayer(layerSlider_->value());
@@ -547,7 +561,7 @@ void MainWindow::openFile(const QString &path) {
                 o.maxTriangles = 6'000'000;  // about 360 MB on the GPU
                 Mesh printed = printedMesh(*sliced, o);
                 if (!printed.tooLarge || cancel->load()) return printed;
-                o.maxTriangles = SurfaceOptions{}.maxTriangles;
+                o.maxTriangles = 4'000'000;  // about 100 MB
                 Mesh smooth = surfaceMesh(*sliced, o);
                 smooth.tooLarge = true;  // tells the window it is the smooth one
                 return smooth;
@@ -562,6 +576,7 @@ void MainWindow::openFile(const QString &path) {
                 }
                 meshing_->setText(smooth ? t("viewer.smoothed") : QString());
                 meshing_->setVisible(smooth);
+                releaseMemory();
             });
     });
     refreshSendButtons();
@@ -587,16 +602,22 @@ void MainWindow::startFollowing(Printer *printer, const QString &path) {
 
 // Keeps the slider, and so the 3D cut, on the layer being printed; stops when the print ends.
 void MainWindow::updateFollow() {
-    if (follow_.isEmpty() && followPending_ && !path_.isEmpty())
-        for (Printer *printer : deck_.printers()) {
-            const QJsonObject j = printer->toJson();
-            if (j.value("online").toBool() && !printerReady(j) &&
-                j.value("status").toObject().value("file").toString() == QFileInfo(path_).fileName()) {
-                follow_ = printer->id();
-                followPending_ = false;
-                break;
-            }
+    // follow a printer printing the open file: right after the file was opened (followPending_), or
+    // whenever a printer starts printing it, even if the slider was moved before
+    const QString open = path_.isEmpty() ? QString() : QFileInfo(path_).fileName();
+    for (Printer *printer : deck_.printers()) {
+        const QJsonObject j = printer->toJson();
+        const QString file = j.value("online").toBool() && !printerReady(j) ? j.value("status").toObject().value("file").toString() : QString();
+        // the print's start time tells a new print of the same file even if the pause between them was missed
+        const QJsonObject job = j.value("job").toObject();
+        const QString print = file.isEmpty() ? QString() : file + '@' + QString::number(job.value("file").toString() == file ? job.value("started").toDouble() : 0, 'f', 3);
+        const bool started = printingFile_.value(printer->id()) != print;
+        printingFile_.insert(printer->id(), print);
+        if (follow_.isEmpty() && !open.isEmpty() && file == open && (followPending_ || started)) {
+            follow_ = printer->id();
+            followPending_ = false;
         }
+    }
     Printer *p = follow_.isEmpty() ? nullptr : deck_.printer(follow_);
     const QJsonObject j = p ? p->toJson() : QJsonObject();
     const QJsonObject st = j.value("status").toObject();

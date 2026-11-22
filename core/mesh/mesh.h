@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <vector>
 
 namespace resindeck {
@@ -31,7 +32,10 @@ struct Mesh {
     std::size_t vertexCount() const { return vertices.size() / 6; }
 };
 
-Mesh voxelMesh(const Voxels &voxels);
+// Over maxTriangles, the grid is made coarser (2x2x2 cells into one) until it fits.
+Mesh voxelMesh(const Voxels &voxels, std::size_t maxTriangles = std::numeric_limits<std::size_t>::max());
+// The grid with factor x factor x factor cells merged into one, solid if any of them is.
+Voxels coarser(const Voxels &voxels, int factor);
 
 struct SurfaceOptions {
     // The part of the file that has the model, in pixels and layers (from the voxel grid, see
@@ -54,6 +58,7 @@ Mesh surfaceMesh(const SlicedFile &file, const SurfaceOptions &options = {});
 
 // The model as printed (pixels above half gray are solid). Uses pixels, layers, maxTriangles, progress
 // and cancel from the options; over maxTriangles it stops and returns an empty mesh with tooLarge set.
+// It stops early too, once a tenth of the layers shows the whole would be well over.
 Mesh printedMesh(const SlicedFile &file, const SurfaceOptions &options = {});
 
 }  // namespace resindeck
