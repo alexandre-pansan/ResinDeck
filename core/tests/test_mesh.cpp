@@ -175,6 +175,25 @@ private slots:
         QVERIFY(m.empty());
     }
 
+    void coarserGridKeepsTheShape() {
+        const Voxels v = cxdlp::File(writeBox(dir.filePath("box.cxdlpv4"))).voxels(2);
+        const Voxels c = coarser(v, 2);
+        QCOMPARE(c.shape[2], (v.shape[2] + 1) / 2);
+        QCOMPARE(c.voxel[0], v.voxel[0] * 2);
+        QCOMPARE(c.origin, v.origin);
+        QCOMPARE(c.layersPerVoxel, v.layersPerVoxel * 2);
+        QVERIFY(c.at(0, 0, 0));
+    }
+
+    void voxelMeshFitsItsTriangleLimit() {
+        const Voxels v = cxdlp::File(writeBox(dir.filePath("box.cxdlpv4"))).voxels(1);
+        const std::size_t full = voxelMesh(v).indices.size() / 3;
+        const Mesh small = voxelMesh(v, full / 3);
+        QVERIFY2(small.indices.size() / 3 <= full / 3, qPrintable(QString("%1 of %2").arg(small.indices.size() / 3).arg(full)));
+        QVERIFY(!small.empty());
+        QVERIFY(std::abs(measure(small).volume) > 0);  // the voxel mesh is wound inward (no face is culled)
+    }
+
     void boundsFromTheVoxelGrid() {
         const cxdlp::File f(writeBox(dir.filePath("box.cxdlpv4")));
         SurfaceOptions o;

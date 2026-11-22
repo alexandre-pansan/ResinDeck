@@ -1,5 +1,6 @@
 #include "mesh/mesh.h"
 
+#include <QThread>
 #include <QtConcurrent/QtConcurrentMap>
 
 #include <algorithm>
@@ -36,10 +37,44 @@ void computeNormals(Mesh &m) {
 
 // --- voxel mesh --------------------------------------------------------------------------
 
-Mesh voxelMesh(const Voxels &v) {
+Voxels coarser(const Voxels &v, int f) {
+    if (v.empty() || f <= 1) return v;
+    Voxels c = v;
+    c.shape = {(v.shape[0] + f - 1) / f, (v.shape[1] + f - 1) / f, (v.shape[2] + f - 1) / f};
+    c.cells.assign(std::size_t(c.shape[0]) * std::size_t(c.shape[1]) * std::size_t(c.shape[2]), 0);
+    for (int z = 0; z < v.shape[0]; ++z)
+        for (int y = 0; y < v.shape[1]; ++y)
+            for (int x = 0; x < v.shape[2]; ++x)
+                if (v.at(z, y, x))
+                    c.cells[(std::size_t(z / f) * std::size_t(c.shape[1]) + std::size_t(y / f)) * std::size_t(c.shape[2]) + std::size_t(x / f)] = 1;
+    c.voxel = {v.voxel[0] * f, v.voxel[1] * f, v.voxel[2] * f};
+    c.layersPerVoxel = v.layersPerVoxel * f;
+    return c;
+}
+
+Mesh voxelMesh(const Voxels &grid, std::size_t maxTriangles) {
     Mesh m;
-    m.bed = v.bed;
-    if (v.empty()) return m;
+    m.bed = grid.bed;
+    if (grid.empty()) return m;
+    // count the outside faces first: a grid with too many is merged into a coarser one
+    auto countFaces = [](const Voxels &g) {
+        std::size_t n = 0;
+        const int gz = g.shape[0], gy = g.shape[1], gx = g.shape[2];
+        auto s = [&](int z, int y, int x) { return z >= 0 && y >= 0 && x >= 0 && z < gz && y < gy && x < gx && g.at(z, y, x); };
+        for (int z = 0; z < gz; ++z)
+            for (int y = 0; y < gy; ++y)
+                for (int x = 0; x < gx; ++x)
+                    if (g.at(z, y, x))
+                        n += !s(z, y, x + 1) + !s(z, y, x - 1) + !s(z, y + 1, x) + !s(z, y - 1, x) + !s(z + 1, y, x) + !s(z - 1, y, x);
+        return n;
+    };
+    Voxels reduced;
+    const Voxels *use = &grid;
+    while (countFaces(*use) * 2 > maxTriangles && (use->shape[1] > 1 || use->shape[2] > 1)) {
+        reduced = coarser(*use, 2);
+        use = &reduced;
+    }
+    const Voxels &v = *use;
     const int nz = v.shape[0], ny = v.shape[1], nx = v.shape[2];
     auto solid = [&](int z, int y, int x) { return z >= 0 && y >= 0 && x >= 0 && z < nz && y < ny && x < nx && v.at(z, y, x); };
     // the six faces of a unit cube: neighbour offset, normal, four corners
@@ -285,7 +320,8 @@ Mesh printedMesh(const SlicedFile &file, const SurfaceOptions &o) {
                                                  p[2] + c[0] * a[2] + c[1] * b[2], n[0], n[1], n[2]});
         m.indices.insert(m.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
     };
-    auto full = [&] { return m.indices.size() / 3 > o.maxTriangles; };
+    bool over = false;  // stopped early: the whole would be well over the limit
+    auto full = [&] { return over || m.indices.size() / 3 > o.maxTriangles; };
 
     // walls are merged along their edge within a layer, then across layers while they stay the same:
     // key = kind (x or y wall) | facing | position | from | to, value = first layer
@@ -405,7 +441,7 @@ Mesh printedMesh(const SlicedFile &file, const SurfaceOptions &o) {
         return out;
     };
 
-    constexpr int kBatch = 32;
+    const int kBatch = std::max(4, QThread::idealThreadCount());  // layers held at once: one per core
     std::vector<Layer> batch;
     int batchStart = l0;
     std::vector<quint8> below(std::size_t(bw) * std::size_t(bh), 0);
@@ -436,6 +472,13 @@ Mesh printedMesh(const SlicedFile &file, const SurfaceOptions &o) {
             if (!next.count(key)) emitWall(key, z0, k);
         std::swap(open, next);
         if (full()) break;
+        // a tenth of the way: stop now if the whole would be well over the limit
+        const int done = k - l0 + 1, total = l1 - l0 + 1;
+        if (done >= std::max(8, total / 10) && done < total &&
+            double(m.indices.size() / 3) * total / done > 1.5 * double(o.maxTriangles)) {
+            over = true;
+            break;
+        }
         below = std::move(cur.mask);
         if (o.progress && (k - l0) % 8 == 0) o.progress(double(k - l0) / (l1 - l0 + 1));
     }

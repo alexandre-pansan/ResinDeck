@@ -32,6 +32,10 @@
 
 #include <algorithm>
 
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
+
 namespace resindeck::ui {
 
 namespace {
@@ -46,6 +50,14 @@ void inBackground(QObject *context, Work work, Done done) {
         done(watcher->future());
     });
     watcher->setFuture(QtConcurrent::run(work));
+}
+
+// Gives the memory freed after building a mesh back to the system: glibc keeps it for later otherwise,
+// one pool per worker thread.
+void releaseMemory() {
+#ifdef __GLIBC__
+    malloc_trim(0);
+#endif
 }
 
 QLabel *sectionTitle() {
@@ -524,7 +536,8 @@ void MainWindow::openFile(const QString &path) {
             return;
         }
         const Voxels voxels = decodeVoxels(payload);
-        inBackground<Mesh>(this, [voxels] { return voxelMesh(voxels); }, [this, path](QFuture<Mesh> f) {
+        // the quick preview: a million triangles at most (about 60 MB), it is replaced in a few seconds
+        inBackground<Mesh>(this, [voxels] { return voxelMesh(voxels, 1'000'000); }, [this, path](QFuture<Mesh> f) {
             if (path != path_ || surfaceShown_) return;
             viewer_->setMesh(f.result());
             showLayer(layerSlider_->value());
@@ -548,7 +561,7 @@ void MainWindow::openFile(const QString &path) {
                 o.maxTriangles = 6'000'000;  // about 360 MB on the GPU
                 Mesh printed = printedMesh(*sliced, o);
                 if (!printed.tooLarge || cancel->load()) return printed;
-                o.maxTriangles = SurfaceOptions{}.maxTriangles;
+                o.maxTriangles = 4'000'000;  // about 100 MB
                 Mesh smooth = surfaceMesh(*sliced, o);
                 smooth.tooLarge = true;  // tells the window it is the smooth one
                 return smooth;
@@ -563,6 +576,7 @@ void MainWindow::openFile(const QString &path) {
                 }
                 meshing_->setText(smooth ? t("viewer.smoothed") : QString());
                 meshing_->setVisible(smooth);
+                releaseMemory();
             });
     });
     refreshSendButtons();
